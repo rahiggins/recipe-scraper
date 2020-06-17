@@ -1,0 +1,21 @@
+{
+  "name": "recpe-scraper",
+  "version": "1.0.0",
+  "description": "Scrape recipes from nytimes.com",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "Me",
+  "license": "ISC",
+  "dependencies": {
+    "bufferutil": "^4.0.1",
+    "cheerio": "^1.0.0-rc.3",
+    "electron": "^8.2.4",
+    "moment": "^2.25.3",
+    "needle": "^2.5.0",
+    "puppeteer": "^3.0.3",
+    "spectre.css": "^0.5.8",
+    "utf-8-validate": "^5.0.2"
+  }
+}
