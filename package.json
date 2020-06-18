@@ -1,5 +1,5 @@
 {
-  "name": "recpe-scraper",
+  "name": "recipe-scraper",
   "version": "1.0.0",
   "description": "Scrape recipes from nytimes.com",
   "main": "index.js",
