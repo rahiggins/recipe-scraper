@@ -28,6 +28,7 @@ const needle = require('needle');       // Lightweight HTTP client
 const $ = require('cheerio');           // core jQuery
 
 const appDataPath = app.getPath("appData") + "/" + app.getName();
+const lastDateFile = appDataPath + "/LastDate.txt"
 console.log("appDataPath: " + appDataPath);
 const output = "/Users/rahiggins/Sites/NYT Recipes/newday.txt"; // Table HTML generated
 fs.writeFileSync(output, "");   // Erase any existing output
@@ -731,8 +732,8 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
     let enteredDate = document.getElementById("dateSpec").value;
     if (enteredDate == "") {
         // If no date was entered, get the last processed date and 
-        //  calculate the days to be processed since then
-        let lastDate = Moment(fs.readFileSync("LastDate.txt", "utf8"), "MM-DD-YYYY");
+        //  calculate the days to be processedlastDateFile
+        let lastDate = Moment(fs.readFileSync(lastDateFile, "utf8"), "MM-DD-YYYY");
         if (lastDate.day() == 0) {  // If last was Sunday,
             bumps = [3, 4];         //  next is Wednesday (+3), then Sunday (+4)
         } else {                    // If last was Wednesday,
@@ -840,7 +841,7 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
     // Store LastDate processed
     remvAllMsg();
     if (saveLastDate) {
-        fs.writeFileSync("LastDate.txt", MDY, "utf8");
+        fs.writeFileSync(lastDateFile, MDY, "utf8");
     }
 
     // Add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
