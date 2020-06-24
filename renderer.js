@@ -437,7 +437,7 @@ async function processGo (arr) {
             console.log("processGo - Go clicked")
             let ckd = document.querySelectorAll('input:checked')    // Get checked articles
             if (ckd.length > 0){    // If any articles were checked, write date row table HTML to disk
-                fs.appendFileSync(output, dateRowHTML);
+                fs.appendFileSync(output, dateRowHTML, "utf8");
             }
 
             // Remove article checkboxes and submit button
@@ -553,7 +553,7 @@ function updateIndexHTML (dates) {
     console.log("updateIndexHTML: insert between 0-" + replaceStartIndex.toString() + " and " + replaceEndIndex.toString() + "-" + tableLastIndex.toString());
 
     // Replace ~/Sites/NYT Recipes/yyyy/index.html with the leading unchanged part + the new table HTML + the trailing unchanged part
-    fs.writeFileSync(tablePath, table.substring(0,replaceStartIndex) + newTableHTML + table.substring(replaceEndIndex, tableLastIndex));
+    fs.writeFileSync(tablePath, table.substring(0,replaceStartIndex) + newTableHTML + table.substring(replaceEndIndex, tableLastIndex), "utf8");
     return true;
 }
 
@@ -680,7 +680,7 @@ function NewDays(yyyy) {
                             } 
                         }
                         if (misMatch) {
-                            fs.writeFileSync(Days_path + file_name, day_markup);
+                            fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
                             console.log(file_name + " replaced in Days");
                         }
                     } else {
@@ -688,15 +688,15 @@ function NewDays(yyyy) {
                     }
                     if (diff) {
                         addMsg(file_name + " differs, added to updates", {indent: true});
-                        fs.writeFileSync(Days_path + "NotSame_" + file_name, day_markup);
-                        fs.writeFileSync(update_path + file_name, day_markup);
+                        fs.writeFileSync(Days_path + "NotSame_" + file_name, day_markup, "utf8");
+                        fs.writeFileSync(update_path + file_name, day_markup, "utf8");
                     }
                 }
     
             } else {
                 addMsg(file_name + " added to inserts", {indent: true});
-                fs.writeFileSync(Days_path + file_name, day_markup);
-                fs.writeFileSync(insert_path + file_name, day_markup);
+                fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
+                fs.writeFileSync(insert_path + file_name, day_markup, "utf8");
             }
         }
     }
