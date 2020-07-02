@@ -13,7 +13,7 @@
 //      |    For each article in section
 //      |      Call artScrape
 //      |  Call addArticles
-//      |_ Call processGo
+//      |_ Call processSelectedArticles
 //      Call updateIndexHTML
 //      Call processNewDays
 //      Listen for reply from index.js process
@@ -27,15 +27,15 @@ const puppeteer = require('puppeteer'); // Chrome API
 const needle = require('needle');       // Lightweight HTTP client
 const $ = require('cheerio');           // core jQuery
 
-const appDataPath = app.getPath("appData") + "/" + app.getName();
-const lastDateFile = appDataPath + "/LastDate.txt"
-console.log("appDataPath: " + appDataPath);
-const output = "/Users/rahiggins/Sites/NYT Recipes/newday.txt"; // Table HTML generated
+const appDataPath = app.getPath("appData") + "/" + app.getName();   // Path to app data
+const lastDateFile = appDataPath + "/LastDate.txt"  // Path to last-date-processed file
+//console.log("appDataPath: " + appDataPath);
+const output = "/Users/rahiggins/Sites/NYT Recipes/newday.txt"; // File to accumulate table HTML generated
 fs.writeFileSync(output, "");   // Erase any existing output
 
-const URLStart = 'https://www.nytimes.com/issue/todayspaper/';
-const URLWed = '/todays-new-york-times#food';
-const URLSun = '/todays-new-york-times#magazine';
+const URLStart = 'https://www.nytimes.com/issue/todayspaper/';  // Today's Paper URL prefix
+const URLWed = '/todays-new-york-times#food';       // Today's Paper URL Wednesday suffix
+const URLSun = '/todays-new-york-times#magazine';   // Today's Paper URL Sunday suffix
 const today = Moment();
 var url;
 var MDY;    // MM/DD/YYYY
@@ -45,17 +45,18 @@ var sect;   // Magazine | Food
 var dateRowHTML = '';    // Table HTML for date row
 var browser;    // Puppeteer browser
 var page;       // Puppeteer page
+var articleClick;   // Click event handler function, defined and added in articleListen function, removed in processSelectedArticles function.
+var startButton;    // Start button element
 
 const aL = document.getElementById('aL');       // article list div
 const mL = document.getElementById('msgs');     // messages list div
-
-launchPup();    // Launch Puppeteer
 
 // Function definitions
 
 async function launchPup () {
     // Launch Puppeteer and create a page
     // Called from Mainline
+
     console.log("launchPup: entered");
     browser = await puppeteer.launch();
     page = await browser.newPage();
@@ -66,7 +67,9 @@ async function launchPup () {
 
 function addMsg(m, opt) {
     // Add a message to the #msgs div
+    // If opt { indent: true }, add padding-left to message
     // Called throughout
+
     if (typeof opt === 'undefined') {
         opt = {
             indent: false
@@ -85,6 +88,7 @@ function addMsg(m, opt) {
 function remvAllMsg() {
     // Remove all messages in the #msgs div
     // Called throughout
+
     while (mL.firstChild) {
         mL.removeChild(mL.lastChild);
     }
@@ -95,6 +99,7 @@ function addProgress(now,max) {
     // Input:   now - number of articles retrieved
     //          max - number of articles to be retrieved
     // return a progress bar element
+
     let prog = document.createElement("progress");
     prog.id = "artProg";
     prog.classList = " progress float-left";
@@ -130,6 +135,7 @@ async function TPscrape(url) {
         //   - article recipes
         // Form table HTML for article title and recipes
         // Return { hasRecipes:, html: }
+
         let title;
         let arttype;
         let ATD_present;
@@ -265,6 +271,7 @@ async function TPscrape(url) {
         //  Add hasRecipes: and html: to article object
         //  Push article object onto array of article objects
         // Return array of article objects [{title:, author:, href:, hasRecipes:, html: } ...]
+
         console.log("Entering sectionScrape");
 
         let articles = [];  // Array of article objects
@@ -356,12 +363,33 @@ async function TPscrape(url) {
     console.log("TPscrape: exiting  for " + url)
     return scrape;  // array of article objects - [{title:, author:, href:, hasRecipes:, html:}, ...]
 }
+function articleListen(arr) {
+    // Called from addArticles
+    // Input is the article object passed to addArticles from TPscrape
+    // Add and eventListener for clicks
+
+    function articleClick(evt) {
+        // Called by click on article title
+        // Input is a click event
+        // Process click on article titles
+
+        if ( evt.target.classList.contains('article')) {
+            evt.preventDefault();
+            let artIdx = evt.target.parentNode.firstChild.value;
+            console.log("Article clicked: " + arr[artIdx].title);
+            ipcRenderer.send('article-click', 'click', arr[artIdx].href);
+        }
+    }
+
+    document.addEventListener('click', articleClick);
+
+}
 
 function addArticles(arr) {
     // Called from Mainline
     // Input is array of article objects returned by TPscrape
     // Add checkboxes for articles returned by TPscrape to index.html
-    // Add a button labeled "Go" to index.html
+    // Add a button labeled "Next" or "Save" (for last date to be processed) to index.html
 
     console.log("addArticles: entered with: "+ arr);
 
@@ -372,7 +400,12 @@ function addArticles(arr) {
     let cb_title;
     let cb_author;
     
-    // Remove Retrieving... msg and add {Magazine|Food} articles description to index.html
+    articleListen(arr); // Add an eventListener for click on article titles
+                        // Passing the article object to a function that ...
+                        // ... adds the eventListener makes the article object ...
+                        // ... available to the event handler
+
+    // Add {Magazine|Food} articles description to index.html
     let msg = sect + " section articles for " + Day + ", " + MDY;
     addMsg(msg);
 
@@ -401,6 +434,7 @@ function addArticles(arr) {
         iicon.className = "form-icon";
 
         cb_title = document.createElement('div');
+        cb_title.className="article";
         cb_title.innerText = arr[i].title;
 
         cb_author = document.createElement('div');
@@ -420,21 +454,23 @@ function addArticles(arr) {
 }
 
 
-async function processGo (arr) {
+async function processSelectedArticles (arr) {
     // Called from Mainline
     // Input is array of article objects returned by TPscrape
-    // Add event listener, wrapped in a Promise, for the submit button that was added by addArticles
+    // Add event listener, wrapped in a Promise, for the Next/Save button that was added by addArticles
     // Return Promise to Mainline
     //
-    // On click of submit button, for each checked article:
+    // On click of Next/Save button, for each checked article:
     //  write table HTML to disk
     //
-    console.log("processGo: entered")
+    console.log("processSelectedArticles: entered")
     return new Promise(function (resolve) {
         document.getElementById('aList').addEventListener('submit', async (evt) => {
             // prevent default refresh functionality of forms
             evt.preventDefault();
-            console.log("processGo - Go clicked")
+            console.log("processSelectedArticles - Go clicked")
+            document.removeEventListener('click', articleClick);
+            ipcRenderer.send('article-click', 'close');
             let ckd = document.querySelectorAll('input:checked')    // Get checked articles
             if (ckd.length > 0){    // If any articles were checked, write date row table HTML to disk
                 fs.appendFileSync(output, dateRowHTML, "utf8");
@@ -453,7 +489,7 @@ async function processGo (arr) {
                 let artHTML = arr[parseInt(ckd[j].value)].html;
                 fs.appendFileSync(output, artHTML);
             }
-            console.log("processGo: resolving")
+            console.log("processSelectedArticles: resolving")
             resolve();  // Resolve Promise
         },  {once: true});  // AddEventListener option - removes event listener after click
     });    
@@ -464,6 +500,7 @@ function updateIndexHTML (dates) {
     // Input: [Moment(first date), Moment(last date)]
     // Returns: true if update performed, false otherwise
     // Replace empty table rows in ~/Sites/NYT Recipes/yyyy/index.html corresponding with new days' table HTML
+
     let year = dates[0].format("YYYY")
     const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + year + '/index.html';
     const table = fs.readFileSync(tablePath, "UTF-8").toString();       // Read year page
@@ -562,6 +599,7 @@ function NewDays(yyyy) {
     // Input: year (yyyy) of dates being processed
     // Segment the year's table HTML (~/Sites/NYT Recipes/yyyy/index.html) by day
     // Determine if each day's segment is new or if it's an update
+
     console.log("NewDays entered with " + yyyy);
 
     function back2NL(idx) {
@@ -569,6 +607,7 @@ function NewDays(yyyy) {
         // Input: index of <tr> element
         // Returns: index following the new line procedding the input <tr> element
         // Back up from the <tr> element looking for CRLF or LF or CR
+
         var nl_index = -1;
         var nl_look = idx;
         while (nl_index < 0) {
@@ -586,6 +625,7 @@ function NewDays(yyyy) {
         // Returns:  updated table HTML
         // In the first table row, add a class name to each of the three <td> elements
         // This is needed because of the addition of the Month order fuction.  Should not be needed after 2020
+
         if (mk.includes("class=")) {  // Exit if the table HTML already contains class names
             return mk;
         }
@@ -707,6 +747,7 @@ async function processNewDays (yyyy) {
     // Input: year being processed - yyyy
     // Listen for click on "Continue" button
     //  Call NewDays(yyyy) to extract new and updated days' table rows from /NYT Recipes/yyyy/index.html
+
 	console.log("processNewDays: entered");
    	return new Promise(function (resolve) {
 		document.getElementById('aList').addEventListener('click', async (evt) => {
@@ -720,11 +761,18 @@ async function processNewDays (yyyy) {
    	});    
 }
 
+// End of function definitions
+
 // Mainline
+
+launchPup();    // Launch Puppeteer
+
 // Add EventListener for Start button
-document.getElementById("startButton").addEventListener("click", async (evt) => {
+startButton = document.getElementById("startButton");
+startButton.addEventListener("click", async (evt) => {
     // After Start click:
     evt.preventDefault();
+    startButton.classList.add("disabled");
     let datesToProcess = []; // array of dates (Moment objects) to process
     let saveLastDate = false;   // Save LastDate.txt only if datesToProcess were automatically generated
     let msg;
@@ -761,11 +809,7 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
         console.log("datesToProcessRange: " + datesToProcessRange[0].format("MM/DD/YYYY") + ", " + datesToProcessRange[1].format("MM/DD/YYYY"));
     }
 
-    // if (datesToProcess.length > 1) {
-    //     msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY") + " through " + datesToProcessRange[1].format("MM/DD/YYYY");
-    // } else {
-    //     msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY");
-    // }
+    // Add "Processing" dates message to index.html
     switch (datesToProcess.length) {
         case 1:
             msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY");
@@ -785,6 +829,7 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
         YMD = datesToProcess[i].format("YYYY/MM/DD");
         Day = datesToProcess[i].format("dddd");
 
+        // Set Today's Paper section to be processed according to the day of week
         switch (Day) {
             case "Sunday":
                 sect = "Magazine";
@@ -804,7 +849,7 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
             url = `${url}${URLWed}`;
         }
 
-        // Create date table row - write to disk in processGo 
+        // Create date table row - write to disk in processSelectedArticles 
         dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
         dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
         dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
@@ -816,24 +861,25 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
         var artsArray = await TPscrape(url);
         console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
 
-        // Add designated section article checkboxes and Go button to index.html
+        // Add designated section article checkboxes to index.html
         addArticles(artsArray);
 
-        // Add a submit button to index.html
+        // Add a Next/Save submit button to index.html
         if (i < lastDateToProcess) {
             buttonText = "Next";
         } else {
             buttonText = "Save";
         }
         let sub = document.createElement('input');
+        sub.className = "btn"
         sub.type = "submit";
         sub.value = buttonText;
         aL.appendChild(sub);
 
-        // Add Go button EventListener and after submit, process checked articles
-        console.log("Mainline: awaiting processGo");
-        await processGo(artsArray);
-        console.log("Mainline: returned from processGo");
+        // Add Next/Save button EventListener and after submit, process checked articles
+        console.log("Mainline: awaiting processSelectedArticles");
+        await processSelectedArticles(artsArray);
+        console.log("Mainline: returned from processSelectedArticles");
 
         // Repeat for next date to be processed
     }
@@ -844,7 +890,7 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
         fs.writeFileSync(lastDateFile, MDY, "utf8");
     }
 
-    // Add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
+    // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
     if (datesToProcessRange.length > 0) {
         if (updateIndexHTML(datesToProcessRange)) {
             console.log("index.html updated")
@@ -853,32 +899,33 @@ document.getElementById("startButton").addEventListener("click", async (evt) => 
         }
     }
 
-    // Add "Review ..." message and a submit button to index.html
+    // Add "Review ..." message and a Continue submit button to index.html
     msg = "Review NYT Recipe index.html, then click Continue";
     addMsg(msg);
     
     let sub = document.createElement('input');
+    sub.className = "btn";
     sub.id = "continueButton";
     sub.type = "submit";
     sub.value = "Continue";
     aL.appendChild(sub);
 
-    // When "Continue" submitted, look for new and changed days
+    // When "Continue" submitted, call processNewDays to look for new and changed days
     console.log("Mainline: awaiting processNewDays");
     await processNewDays(datesToProcessRange[0].format("YYYY"));
     console.log("Mainline: returned from processNewDays");
 
     // Create listener for insert-closed message from index.js
     ipcRenderer.on('insert-closed', (event, arg) => {
+        // Window for insert.php was closed
         console.log("insert window closed");
         remvAllMsg();
         msg = "Finished";
         addMsg(msg);
-        // Close puppeteer browser
-        browser.close();
+        startButton.classList.remove("disabled");   // Enable the Start button
     })
 
-    // Tell index.js to run insert php script
+    // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
     ipcRenderer.send('invoke-insert', 'insert');
 
 });

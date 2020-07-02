@@ -1,13 +1,21 @@
 // Modules to control application life and create native browser window
 const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
+
+//var win;
 var x;
 var y;
+var xArt;
+var yArt;
+var articleWindows = [];  // Array of article window IDs
 
 function createWindow () {
-  // Create the browser window.
-  const win = new BrowserWindow({
+  // Create the main browser window.
+    win = new BrowserWindow({
+    x: 29,
+    y: 46,
     width: 900,
+    //width: 1500,  // for devTools
     height: 675,
     webPreferences: {
       nodeIntegration: true
@@ -18,13 +26,50 @@ function createWindow () {
   winBounds = win.getBounds();
   x = winBounds.x;
   y = winBounds.y;
+  xArt = x + 400; // Offsets for article windows
+  yArt = y + 15;
 
   // and load the index.html of the app.
   win.loadFile('index.html');
 
   // Open the DevTools.
   //win.webContents.openDevTools()
+
 }
+
+// Create an interprocess communications listener to open articles ...
+// ... in a new window on request by the renderer process
+ipcMain.on('article-click', (event, action, url) => {
+  // console.log("article-click: " + event + ", " + action + ", " + url);
+  if (action == "click") {
+    // Create an article BrowserWindow
+    let winArticle = new BrowserWindow({
+      width: 900,
+      height: 600,
+      x: xArt, // position relative to win BrowserWindow
+      y: yArt,
+      webPreferences: {
+        nodeIntegration: true
+      }
+    })
+    articleWindows.push(winArticle.id); // Record window ID for close later
+    winArticle.loadURL(url);  // load article
+    xArt += 21;               // Offset the next article window to the right and down
+    yArt += 21;
+
+  } else if (action == "close") {
+    // Close all article windows
+
+    for (let w = 0; w < articleWindows.length; w++) {
+      let windowToClose = BrowserWindow.fromId(articleWindows[w]);
+      if (windowToClose !== null) { // If not already closed, ...
+        windowToClose.close();
+      }
+    }
+
+    articleWindows = [];  // Empty article window ID array
+  }
+})
 
 // Create an interprocess communications listener to run recipeScraperInsert.php ...
 // ... in a new window on request by the renderer process
