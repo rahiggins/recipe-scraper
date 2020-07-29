@@ -772,7 +772,8 @@ startButton = document.getElementById("startButton");
 startButton.addEventListener("click", async (evt) => {
     // After Start click:
     evt.preventDefault();
-    startButton.classList.add("disabled");
+    startButton.classList.add("disabled");  // Disable the Start button
+    remvAllMsg();   // Remove any previous messages
     let datesToProcess = []; // array of dates (Moment objects) to process
     let saveLastDate = false;   // Save LastDate.txt only if datesToProcess were automatically generated
     let msg;
@@ -810,7 +811,12 @@ startButton.addEventListener("click", async (evt) => {
     }
 
     // Add "Processing" dates message to index.html
+    let processDates = true;    // Assume there will be dates to process
     switch (datesToProcess.length) {
+        case 0:
+            msg = "No new dates to process";
+            processDates = false;   // Assumption wrong, there are no dates to process
+            break;
         case 1:
             msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY");
             break;
@@ -822,110 +828,112 @@ startButton.addEventListener("click", async (evt) => {
     }
     addMsg(msg);
 
-    // For each date to be processed:
-    let lastDateToProcess = datesToProcess.length - 1;
-    for (let i = 0; i < datesToProcess.length; i++) {
-        MDY = datesToProcess[i].format("MM/DD/YYYY");
-        YMD = datesToProcess[i].format("YYYY/MM/DD");
-        Day = datesToProcess[i].format("dddd");
+    if (processDates) { // If there are dates to process ...
+        // For each date to be processed:
+        let lastDateToProcess = datesToProcess.length - 1;
+        for (let i = 0; i < datesToProcess.length; i++) {
+            MDY = datesToProcess[i].format("MM/DD/YYYY");
+            YMD = datesToProcess[i].format("YYYY/MM/DD");
+            Day = datesToProcess[i].format("dddd");
 
-        // Set Today's Paper section to be processed according to the day of week
-        switch (Day) {
-            case "Sunday":
-                sect = "Magazine";
-                break;
-            case "Wednesday":
-                sect = "Food";
-                break;
-            default:
-                sect = "";
+            // Set Today's Paper section to be processed according to the day of week
+            switch (Day) {
+                case "Sunday":
+                    sect = "Magazine";
+                    break;
+                case "Wednesday":
+                    sect = "Food";
+                    break;
+                default:
+                    sect = "";
+            }
+
+            // Form Today's Paper URL
+            url = `${URLStart}${YMD}`;
+            if (Day == "Sunday") {
+                url = `${url}${URLSun}`;
+            } else {
+                url = `${url}${URLWed}`;
+            }
+
+            // Create date table row - write to disk in processSelectedArticles 
+            dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
+            dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
+            dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
+            dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
+            dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
+
+            // Call TPscrape to retrieve designated section articles
+            console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
+            var artsArray = await TPscrape(url);
+            console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
+
+            // Add designated section article checkboxes to index.html
+            addArticles(artsArray);
+
+            // Add a Next/Save submit button to index.html
+            if (i < lastDateToProcess) {
+                buttonText = "Next";
+            } else {
+                buttonText = "Save";
+            }
+            let sub = document.createElement('input');
+            sub.className = "btn"
+            sub.type = "submit";
+            sub.value = buttonText;
+            aL.appendChild(sub);
+
+            // Add Next/Save button EventListener and after submit, process checked articles
+            console.log("Mainline: awaiting processSelectedArticles");
+            await processSelectedArticles(artsArray);
+            console.log("Mainline: returned from processSelectedArticles");
+
+            // Repeat for next date to be processed
         }
 
-        // Form Today's Paper URL
-        url = `${URLStart}${YMD}`;
-        if (Day == "Sunday") {
-            url = `${url}${URLSun}`;
-        } else {
-            url = `${url}${URLWed}`;
+        // Store LastDate processed
+        remvAllMsg();
+        if (saveLastDate) {
+            fs.writeFileSync(lastDateFile, MDY, "utf8");
         }
 
-        // Create date table row - write to disk in processSelectedArticles 
-        dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
-        dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
-        dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
-        dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
-        dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
-
-        // Call TPscrape to retrieve designated section articles
-        console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
-        var artsArray = await TPscrape(url);
-        console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
-
-        // Add designated section article checkboxes to index.html
-        addArticles(artsArray);
-
-        // Add a Next/Save submit button to index.html
-        if (i < lastDateToProcess) {
-            buttonText = "Next";
-        } else {
-            buttonText = "Save";
+        // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
+        if (datesToProcessRange.length > 0) {
+            if (updateIndexHTML(datesToProcessRange)) {
+                console.log("index.html updated")
+            } else {
+                console.log("problem updating index.html")
+            }
         }
+
+        // Add "Review ..." message and a Continue submit button to index.html
+        msg = "Review NYT Recipe index.html, then click Continue";
+        addMsg(msg);
+
         let sub = document.createElement('input');
-        sub.className = "btn"
+        sub.className = "btn";
+        sub.id = "continueButton";
         sub.type = "submit";
-        sub.value = buttonText;
+        sub.value = "Continue";
         aL.appendChild(sub);
 
-        // Add Next/Save button EventListener and after submit, process checked articles
-        console.log("Mainline: awaiting processSelectedArticles");
-        await processSelectedArticles(artsArray);
-        console.log("Mainline: returned from processSelectedArticles");
+        // When "Continue" submitted, call processNewDays to look for new and changed days
+        console.log("Mainline: awaiting processNewDays");
+        await processNewDays(datesToProcessRange[0].format("YYYY"));
+        console.log("Mainline: returned from processNewDays");
 
-        // Repeat for next date to be processed
+        // Create listener for insert-closed message from index.js
+        ipcRenderer.on('insert-closed', (event, arg) => {
+            // Window for insert.php was closed
+            console.log("insert window closed");
+            remvAllMsg();
+            msg = "Finished";
+            addMsg(msg);
+        })
+
+        // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
+        ipcRenderer.send('invoke-insert', 'insert');
     }
-
-    // Store LastDate processed
-    remvAllMsg();
-    if (saveLastDate) {
-        fs.writeFileSync(lastDateFile, MDY, "utf8");
-    }
-
-    // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
-    if (datesToProcessRange.length > 0) {
-        if (updateIndexHTML(datesToProcessRange)) {
-            console.log("index.html updated")
-        } else {
-            console.log("problem updating index.html")
-        }
-    }
-
-    // Add "Review ..." message and a Continue submit button to index.html
-    msg = "Review NYT Recipe index.html, then click Continue";
-    addMsg(msg);
-    
-    let sub = document.createElement('input');
-    sub.className = "btn";
-    sub.id = "continueButton";
-    sub.type = "submit";
-    sub.value = "Continue";
-    aL.appendChild(sub);
-
-    // When "Continue" submitted, call processNewDays to look for new and changed days
-    console.log("Mainline: awaiting processNewDays");
-    await processNewDays(datesToProcessRange[0].format("YYYY"));
-    console.log("Mainline: returned from processNewDays");
-
-    // Create listener for insert-closed message from index.js
-    ipcRenderer.on('insert-closed', (event, arg) => {
-        // Window for insert.php was closed
-        console.log("insert window closed");
-        remvAllMsg();
-        msg = "Finished";
-        addMsg(msg);
-        startButton.classList.remove("disabled");   // Enable the Start button
-    })
-
-    // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
-    ipcRenderer.send('invoke-insert', 'insert');
+    startButton.classList.remove("disabled");   // Enable the Start button
 
 });
