@@ -2,7 +2,8 @@
 const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
 
-//var win;
+var win;
+var winBounds;
 var x;
 var y;
 var xArt;
@@ -37,8 +38,13 @@ function createWindow () {
 
 }
 
-// Create an interprocess communications listener to open articles ...
-// ... in a new window on request by the renderer process
+// Create an interprocess communications listener to open devtools to display error logging
+ipcMain.on('tools', () => {
+  win.webContents.openDevTools();
+})
+
+// Create an interprocess communications listener to open articles
+//  in a new window on request by the renderer process
 ipcMain.on('article-click', (event, action, url) => {
   // console.log("article-click: " + event + ", " + action + ", " + url);
   if (action == "click") {
@@ -73,7 +79,7 @@ ipcMain.on('article-click', (event, action, url) => {
 
 // Create an interprocess communications listener to run recipeScraperInsert.php ...
 // ... in a new window on request by the renderer process
-ipcMain.on('invoke-insert', (event, arg) => {
+ipcMain.on('invoke-insert', (event) => {
   // Create winInsert BrowserWindow
   const winInsert = new BrowserWindow({
     width: 500,
@@ -88,7 +94,7 @@ ipcMain.on('invoke-insert', (event, arg) => {
   winInsert.loadURL('http://localhost:8888/recipeScraperInsert.php');
 
   // Listen for winInsert window close
-  winInsert.on("closed", _ => {
+  winInsert.on("closed", () => {
     console.log("Insert window closed");
     // Let renderer.js process know
     event.reply('insert-closed', 'closed')
