@@ -294,7 +294,7 @@ async function TPscrape(url) {
         let articles = [];  // Array of article objects
 
         // Locate the target section (anch[1])
-        let an = $("a", html).filter(function(i,el) {
+        let an = $("a", html).filter(function() {
             return $(this).attr("name") == anch[1];
         })
         //console.log("Number of anchors: " + an.length.toString());
@@ -943,7 +943,7 @@ async function Mainline() {
                     console.log("Mainline: returned from processNewDays");
         
                     // Create listener for insert-closed message from index.js
-                    ipcRenderer.on('insert-closed', (event, arg) => {
+                    ipcRenderer.on('insert-closed', () => {
                         // Window for insert.php was closed
                         console.log("insert window closed");
                         remvAllMsg();

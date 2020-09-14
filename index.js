@@ -39,7 +39,7 @@ function createWindow () {
 }
 
 // Create an interprocess communications listener to open devtools to display error logging
-ipcMain.on('tools', (event, action) => {
+ipcMain.on('tools', () => {
   win.webContents.openDevTools();
 })
 
@@ -79,7 +79,7 @@ ipcMain.on('article-click', (event, action, url) => {
 
 // Create an interprocess communications listener to run recipeScraperInsert.php ...
 // ... in a new window on request by the renderer process
-ipcMain.on('invoke-insert', (event, arg) => {
+ipcMain.on('invoke-insert', (event) => {
   // Create winInsert BrowserWindow
   const winInsert = new BrowserWindow({
     width: 500,
