@@ -2,6 +2,7 @@
 /index-test.html
 /node_modules
 /package-lock.json
+eslintrc.json
 spectre.min.css
 recipe-scraper.png
 recipe-scraper.svg

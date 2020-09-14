@@ -19,19 +19,20 @@
 //      Listen for reply from index.js process
 //      Send invoke-insert to index.js process
 
-const { app } = require('electron').remote  // Access to app information
-const { ipcRenderer } = require('electron') // InterProcess Communications
-const Moment = require("moment");       // Date/time functions
-const fs = require('fs');               // Filesystem functions
+const { app } = require('electron').remote; // Access to app information
+const { ipcRenderer } = require('electron'); // InterProcess Communications
+const Moment = require('moment'); // Date/time functions
+const fs = require('fs'); // Filesystem functions
 const puppeteer = require('puppeteer'); // Chrome API
-const needle = require('needle');       // Lightweight HTTP client
-const $ = require('cheerio');           // core jQuery
+const needle = require('needle'); // Lightweight HTTP client
+const $ = require('cheerio'); // core jQuery
 
-const appDataPath = app.getPath("appData") + "/" + app.getName();   // Path to app data
-const lastDateFile = appDataPath + "/LastDate.txt"  // Path to last-date-processed file
-//console.log("appDataPath: " + appDataPath);
-const output = "/Users/rahiggins/Sites/NYT Recipes/newday.txt"; // File to accumulate table HTML generated
-fs.writeFileSync(output, "");   // Erase any existing output
+const appDataPath = app.getPath('appData') + "/" + app.name; // Path to app data
+const lastDateFile = appDataPath + '/LastDate.txt';  // Path to last-date-processed file
+// console.log("appDataPath: " + appDataPath);
+var newTableHTML = ''; // Generated table HTML is appended to this
+// const output = "/Users/rahiggins/Sites/NYT Recipes/newday.txt"; // File to accumulate table HTML generated (diagnostic)
+// fs.writeFileSync(output, "");   // Erase any existing output
 
 const URLStart = 'https://www.nytimes.com/issue/todayspaper/';  // Today's Paper URL prefix
 const URLWed = '/todays-new-york-times#food';       // Today's Paper URL Wednesday suffix
@@ -171,8 +172,8 @@ async function TPscrape(url) {
                 if ($(this).text().length > 0) {
                     //console.log("e6idgb70 text: " + $(this).text());
                     arttype = $(this).text().split(/ OF THE TIMES/i)[0].toLowerCase();
-                    if (arttype == "eat" || arttype == "a good appetite") {arttype = "article"}
-                    if (arttype == "wines") {arttype = "wine"}
+                    if (arttype.trim() == "eat" || arttype.trim() == "a good appetite") {arttype = "article"}
+                    if (arttype.trim() == "wines") {arttype = "wine"}
                 }
             })
     
@@ -206,10 +207,26 @@ async function TPscrape(url) {
                         let recipe = {
                             name: $(this).text(),
                             link: $(this).attr("href")
-                        }
+                        };
                         //console.log(recipe);
-                        recipeList.push(recipe)
+                        recipeList.push(recipe);
                     })
+                } else {
+                    // What won't they think of next - 5 Standout Recipes From Julia Reed 9/2/2020
+                    // Standalone <p> elements consisting solely of a link to a recipe
+                    let paraanch = $("a",this);
+                    if (paraanch.length == 1 && 
+                        paraanch.text() == $(this).text() && 
+                        paraanch.attr("href").includes("cooking.nytimes.com")) {
+                        noRecipes = false;  // Typical recipes were found, so noRecipes is false
+                        recipes = true;     // Recipes were found
+                        let recipe = {
+                            name: paraanch.text(),
+                            link: paraanch.attr("href")
+                        };
+                        // console.log(recipe);
+                        recipeList.push(recipe);
+                    }
                 }
             })
             
@@ -223,7 +240,7 @@ async function TPscrape(url) {
                     if (artHref.includes("cooking.nytimes.com")) {
                         //console.log("Alternate recipes found");
                         recipes = true;
-                        recipe = {
+                        let recipe = {
                             name: $("a", this).text(),
                             link: artHref
                         }
@@ -248,7 +265,7 @@ async function TPscrape(url) {
     
         let hasRecipes = getRecipes(html);  // Get recipes
         // Create recipe table rows
-        for (i in recipeList) {
+        for (const i in recipeList) {
             tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>recipe<br>\n";
                     tableHTML = tableHTML + '                </td>\n                <td><a href="';
                     tableHTML = tableHTML + recipeList[i].link + '">' + recipeList[i].name + "</a></td>\n              </tr>\n";
@@ -414,7 +431,7 @@ function addArticles(arr) {
     element.parentNode.removeChild(element);
 
     // Add a checkbox for each article to index.html
-    for (i in arr) {
+    for (const i in arr) {
 
         stringI = i.toString();
 
@@ -461,7 +478,7 @@ async function processSelectedArticles (arr) {
     // Return Promise to Mainline
     //
     // On click of Next/Save button, for each checked article:
-    //  write table HTML to disk
+    //  append table HTML to newTableHTML
     //
     console.log("processSelectedArticles: entered")
     return new Promise(function (resolve) {
@@ -472,8 +489,9 @@ async function processSelectedArticles (arr) {
             document.removeEventListener('click', articleClick);
             ipcRenderer.send('article-click', 'close');
             let ckd = document.querySelectorAll('input:checked')    // Get checked articles
-            if (ckd.length > 0){    // If any articles were checked, write date row table HTML to disk
-                fs.appendFileSync(output, dateRowHTML, "utf8");
+            if (ckd.length > 0){    // If any articles were checked, append date row table HTML
+                newTableHTML += dateRowHTML;
+                // fs.appendFileSync(output, dateRowHTML, "utf8");  // (diagnostic)
             }
 
             // Remove article checkboxes and submit button
@@ -484,10 +502,11 @@ async function processSelectedArticles (arr) {
             mL.removeChild(mL.lastChild);
 
 
-            // For each article, table HTML to disk
-            for (j = 0; j < ckd.length; j++) {
+            // For each checked article, append its table HTML
+            for (let j = 0; j < ckd.length; j++) {
                 let artHTML = arr[parseInt(ckd[j].value)].html;
-                fs.appendFileSync(output, artHTML);
+                newTableHTML += artHTML;    // Append table HTML
+                // fs.appendFileSync(output, artHTML);  // (diagnostic)
             }
             console.log("processSelectedArticles: resolving")
             resolve();  // Resolve Promise
@@ -501,17 +520,18 @@ function updateIndexHTML (dates) {
     // Returns: true if update performed, false otherwise
     // Replace empty table rows in ~/Sites/NYT Recipes/yyyy/index.html corresponding with new days' table HTML
 
+    // let errmsg; // Error message
     let year = dates[0].format("YYYY")
     const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + year + '/index.html';
     const table = fs.readFileSync(tablePath, "UTF-8").toString();       // Read year page
-    const newTableHTML = fs.readFileSync(output, "UTF-8").toString();   // Read new table HTML created by this app
+    // const newTableHTML = fs.readFileSync(output, "UTF-8").toString();   // Read new table HTML created by this app (diagnostic)
     let tableLastIndex = table.length-1;
 
     // Find beginning date
     console.log("Finding start of replace")
     let startDateIndex = table.indexOf(dates[0].format("MM/DD/YYYY"));
     if (startDateIndex == -1) {
-        console.log("updateIndexHTML: first date " + dates[0].format("MM/DD/YYYY") + " not found in index.html")
+        console.error("updateIndexHTML: first date " + dates[0].format("MM/DD/YYYY") + " not found in index.html")
         return false;
     }
     //console.log("startDateIndex: " + startDateIndex.toString());
@@ -524,7 +544,7 @@ function updateIndexHTML (dates) {
         trEndBeforeStartDateIndex = table.lastIndexOf("<tbody>", startDateIndex);
     }
     if (trEndBeforeStartDateIndex == -1) {
-        console.log("updateIndexHTML: unable to find </tr> or <tbody> preceding " + dates[0].format("MM/DD/YYYY"));
+        console.error("updateIndexHTML: unable to find </tr> or <tbody> preceding " + dates[0].format("MM/DD/YYYY"));
         return false;
     }
     console.log("trEndBeforeStartDateIndex: " + trEndBeforeStartDateIndex.toString());
@@ -532,7 +552,7 @@ function updateIndexHTML (dates) {
     // Find the newline character between the </tr>|<tbody> element and the beginning date
     let nlAfterTrEndBeforeStartDateIndexIndex = table.substr(trEndBeforeStartDateIndex,trEndLength+2).search(/\r\n|\n|\r/);
     if (nlAfterTrEndBeforeStartDateIndexIndex == -1) {
-        console.log("updateIndexHTML: unable to find newline following trEndBeforeStartDateIndex");
+        console.error("updateIndexHTML: unable to find newline following trEndBeforeStartDateIndex");
         return false;
     }
     //console.log("nlAfterTrEndBeforeStartDateIndexIndex: " + nlAfterTrEndBeforeStartDateIndexIndex.toString())
@@ -546,7 +566,7 @@ function updateIndexHTML (dates) {
     // Find the ending date
     let endDateIndex = table.indexOf(dates[1].format("MM/DD/YYYY"));
     if (endDateIndex == -1) {
-        console.log("updateIndexHTML: last date " + dates[1].format("MM/DD/YYYY") + " not found in index.html")
+        console.error("updateIndexHTML: last date " + dates[1].format("MM/DD/YYYY") + " not found in index.html");        
         return false;
     }
     console.log("endDateIndex: " + endDateIndex.toString());
@@ -555,10 +575,10 @@ function updateIndexHTML (dates) {
     let nextDateAfterEndDateIndex = table.substr(endDateIndex+10).search(/\d\d\/\d\d\/\d\d\d\d/);
     console.log("nextDateAfterEndDateIndex search result: " + nextDateAfterEndDateIndex.toString());
     if (nextDateAfterEndDateIndex == -1) {
-        nextDatefterEndDateIndex = table.indexOf("</tbody", endDateIndex);
+        nextDateAfterEndDateIndex = table.indexOf("</tbody", endDateIndex);
         console.log("nextDateAfterEndDateIndex indexOf result: " + nextDateAfterEndDateIndex.toString());
         if (nextDateAfterEndDateIndex == -1) {
-            console.log("updateIndexHTML: unable to find MM/DD/YYYY or </tbody following " + dates[1].format("MM/DD/YYYY"));
+            console.error("updateIndexHTML: unable to find MM/DD/YYYY or </tbody following " + dates[1].format("MM/DD/YYYY"));           
             return false; 
         }
     } else {
@@ -569,7 +589,7 @@ function updateIndexHTML (dates) {
     // Find the </tr> element preceeding the next date or </tbody>
     let trEndBeforeNextDateAfterEndDateIndex = table.lastIndexOf("</tr>", nextDateAfterEndDateIndex);
     if (trEndBeforeNextDateAfterEndDateIndex == -1) {
-        console.log("updateIndexHTML: unable to find </tr> preceding MM/DD/YYYY or </tbody");
+        console.error("updateIndexHTML: unable to find </tr> preceding MM/DD/YYYY or </tbody");        
         return false;
     }
     console.log("updateIndexHTML: trEndBeforeNextDateAfterEndDateIndex: " + trEndBeforeNextDateAfterEndDateIndex.toString());
@@ -577,7 +597,7 @@ function updateIndexHTML (dates) {
     // Find the newline character(s) follow the </tr> element
     let nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex = table.substr(trEndBeforeNextDateAfterEndDateIndex,7).search(/\r\n|\n|\r/);
     if (nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex == -1) {
-        console.log("updateIndexHTML: unable to find newline following trEndBeforeNextDateAfterEndDateIndex");
+        console.error("updateIndexHTML: unable to find newline following trEndBeforeNextDateAfterEndDateIndex");        
         return false;
     }
     console.log("updateIndexHTML: (nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex: " + nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex.toString());
@@ -608,14 +628,14 @@ function NewDays(yyyy) {
         // Returns: index following the new line procedding the input <tr> element
         // Back up from the <tr> element looking for CRLF or LF or CR
 
-        var nl_index = -1;
-        var nl_look = idx;
+        let nl_index = -1;
+        let nl_look = idx;
         while (nl_index < 0) {
             nl_look = nl_look - 2;
             nl_index = table.substring(nl_look,idx).search(/\r\n|\n|\r/);
         }
         nl_index = nl_look + nl_index;
-        nl_str = table.substr(nl_index,nl_index+3).match(/\r\n|\n|\r/);
+        let nl_str = table.substr(nl_index,nl_index+3).match(/\r\n|\n|\r/);
         return nl_index + nl_str[0].length;
     }
     
@@ -630,7 +650,7 @@ function NewDays(yyyy) {
             return mk;
         }
         var idx = 0;
-        classes = ["date", "type", "name"]
+        let classes = ["date", "type", "name"]
         for (let i = 0; i <= 2; ++i) {
             let class_insert = ' class="' + classes[i] + '"';
             idx = mk.indexOf("<td",idx) + 3;
@@ -663,7 +683,7 @@ function NewDays(yyyy) {
             date_index = date_index + start;
             start = date_index + 10;
             tr = table.lastIndexOf("<tr>",date_index);
-            date_row_index = back2NL(tr);
+            let date_row_index = back2NL(tr);
             date_indices.push(date_row_index);
         } else {
             tbody_end_index = table.substr(start).indexOf("</tbody>") + start;
@@ -749,7 +769,7 @@ async function processNewDays (yyyy) {
     //  Call NewDays(yyyy) to extract new and updated days' table rows from /NYT Recipes/yyyy/index.html
 
 	console.log("processNewDays: entered");
-   	return new Promise(function (resolve) {
+    return new Promise(function (resolve) {
 		document.getElementById('aList').addEventListener('click', async (evt) => {
             evt.preventDefault();
             remvAllMsg();
@@ -757,183 +777,199 @@ async function processNewDays (yyyy) {
             addMsg("New and updated days:");
 			NewDays(yyyy);
 			resolve();  // Resolve Promise
-        	},  {once: true});
-   	});    
+        },  {once: true});
+    });    
+}
+
+// Mainline function
+async function Mainline() {
+    console.log("Entered Mainline, awaiting Puppeteer launch");
+    await launchPup();    // Launch Puppeteer
+
+    // Add EventListener for Start button
+    console.log("Mainline: Adding event listener to Start button");
+    startButton = document.getElementById("startButton");
+    startButton.addEventListener("click", async (evt) => {
+        // After Start click:
+        evt.preventDefault();
+        console.log("Mainline: Start button clicked, disable Start button");
+        startButton.classList.add("disabled");  // Disable the Start button
+        remvAllMsg();   // Remove any previous messages
+        let datesToProcess = []; // array of dates (Moment objects) to process
+        let saveLastDate = false;   // Save LastDate.txt only if datesToProcess were automatically generated
+        let msg;
+        let bumps = [];    // Increments to next day: [3, 4] from Sunday or [4, 3] from Wednesday 
+        // Check if a date was entered
+        let enteredDate = document.getElementById("dateSpec").value;
+        if (enteredDate == "") {
+            // If no date was entered, get the last processed date and 
+            //  calculate the days to be processedlastDateFile
+            let lastDate = Moment(fs.readFileSync(lastDateFile, "utf8"), "MM-DD-YYYY");
+            if (lastDate.day() == 0) {  // If last was Sunday,
+                bumps = [3, 4];         //  next is Wednesday (+3), then Sunday (+4)
+            } else {                    // If last was Wednesday,
+                bumps = [4, 3];         //  next is Sunday (+4), then Wednesday (+3)
+            }
+            const swtch = [1, 0];       // bumps toggle
+            let s = 0;
+            let nextDate = lastDate.add(bumps[s], 'days');  // nextDate after LastDate processed
+            while (nextDate <= today) {
+                datesToProcess.push(Moment(nextDate));  // Moment() clones nextDate
+                s = swtch[s];
+                nextDate = nextDate.add(bumps[s], 'days');  // Increment nextDate
+            }
+            if (datesToProcess.length > 0) {
+                saveLastDate = true;
+            }
+        } else {
+            // Otherwise, process only the entered date
+            datesToProcess.push(Moment(enteredDate, 'MM-DD-YYYY'));
+        }
+
+        let datesToProcessRange = [];
+        if (datesToProcess.length > 0) {
+            datesToProcessRange = [datesToProcess[0], datesToProcess[datesToProcess.length-1]];
+            console.log("datesToProcessRange: " + datesToProcessRange[0].format("MM/DD/YYYY") + ", " + datesToProcessRange[1].format("MM/DD/YYYY"));
+        }
+
+        // Add "Processing" dates message to index.html
+        let processDates = true;    // Assume there will be dates to process
+        switch (datesToProcess.length) {
+            case 0:
+                msg = "No new dates to process";
+                processDates = false;   // Assumption wrong, there are no dates to process
+                break;
+            case 1:
+                msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY");
+                break;
+            case 2:
+                msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY") + " and " + datesToProcessRange[1].format("MM/DD/YYYY");
+                break;
+            default:
+                msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY") + " through " + datesToProcessRange[1].format("MM/DD/YYYY");
+        }
+        addMsg(msg);
+
+        if (processDates) { // If there are dates to process ...
+            // For each date to be processed:
+            let lastDateToProcess = datesToProcess.length - 1;
+            for (let i = 0; i < datesToProcess.length; i++) {
+                MDY = datesToProcess[i].format("MM/DD/YYYY");
+                YMD = datesToProcess[i].format("YYYY/MM/DD");
+                Day = datesToProcess[i].format("dddd");
+
+                // Set Today's Paper section to be processed according to the day of week
+                switch (Day) {
+                    case "Sunday":
+                        sect = "Magazine";
+                        break;
+                    case "Wednesday":
+                        sect = "Food";
+                        break;
+                    default:
+                        sect = "";
+                }
+
+                // Form Today's Paper URL
+                url = `${URLStart}${YMD}`;
+                if (Day == "Sunday") {
+                    url = `${url}${URLSun}`;
+                } else {
+                    url = `${url}${URLWed}`;
+                }
+
+                // Create date table row - write to disk in processSelectedArticles 
+                dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
+                dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
+                dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
+                dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
+                dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
+
+                // Call TPscrape to retrieve designated section articles
+                console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
+                var artsArray = await TPscrape(url);
+                console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
+
+                // Add designated section article checkboxes to index.html
+                addArticles(artsArray);
+
+                // Add a Next/Save submit button to index.html
+                let buttonText;
+                if (i < lastDateToProcess) {
+                    buttonText = "Next";
+                } else {
+                    buttonText = "Save";
+                }
+                let sub = document.createElement('input');
+                sub.className = "btn"
+                sub.type = "submit";
+                sub.value = buttonText;
+                aL.appendChild(sub);
+
+                // Add Next/Save button EventListener and after submit, process checked articles
+                console.log("Mainline: awaiting processSelectedArticles");
+                await processSelectedArticles(artsArray);
+                console.log("Mainline: returned from processSelectedArticles");
+
+                // Repeat for next date to be processed
+            }
+
+            // Store LastDate processed
+            remvAllMsg();
+            if (saveLastDate) {
+                fs.writeFileSync(lastDateFile, MDY, "utf8");
+            }
+
+            // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
+            if (datesToProcessRange.length > 0) {
+                if (updateIndexHTML(datesToProcessRange)) {
+                    console.log("Mainline: index.html updated")
+                    newTableHTML = "";  // Reset newTableHTML
+
+                    // Add "Review ..." message and a Continue submit button to index.html
+                    msg = "Review NYT Recipe index.html, then click Continue";
+                    addMsg(msg);
+        
+                    let sub = document.createElement('input');
+                    sub.className = "btn";
+                    sub.id = "continueButton";
+                    sub.type = "submit";
+                    sub.value = "Continue";
+                    aL.appendChild(sub);
+        
+                    // When "Continue" submitted, call processNewDays to look for new and changed days
+                    console.log("Mainline: awaiting processNewDays");
+                    await processNewDays(datesToProcessRange[0].format("YYYY"));
+                    console.log("Mainline: returned from processNewDays");
+        
+                    // Create listener for insert-closed message from index.js
+                    ipcRenderer.on('insert-closed', (event, arg) => {
+                        // Window for insert.php was closed
+                        console.log("insert window closed");
+                        remvAllMsg();
+                        msg = "Finished";
+                        addMsg(msg);
+                    })
+        
+                    // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
+                    ipcRenderer.send('invoke-insert', 'insert');
+                } else {
+                    console.error("Mainliane: problem updating index.html")
+                    console.error("newTableHTML:");
+                    console.error(newTableHTML);
+                    msg = "Problem updating index.html — see console log";
+                    addMsg(msg);
+                    ipcRenderer.send('tools', 'open');  // Tell main process to open Developer Tools; displays error logging
+                }
+            }
+
+        }
+        console.log("Mainline: enable Start button")
+        startButton.classList.remove("disabled");   // Enable the Start button
+
+    });
 }
 
 // End of function definitions
 
-// Mainline
-
-launchPup();    // Launch Puppeteer
-
-// Add EventListener for Start button
-startButton = document.getElementById("startButton");
-startButton.addEventListener("click", async (evt) => {
-    // After Start click:
-    evt.preventDefault();
-    startButton.classList.add("disabled");  // Disable the Start button
-    remvAllMsg();   // Remove any previous messages
-    let datesToProcess = []; // array of dates (Moment objects) to process
-    let saveLastDate = false;   // Save LastDate.txt only if datesToProcess were automatically generated
-    let msg;
-    // Check if a date was entered
-    let enteredDate = document.getElementById("dateSpec").value;
-    if (enteredDate == "") {
-        // If no date was entered, get the last processed date and 
-        //  calculate the days to be processedlastDateFile
-        let lastDate = Moment(fs.readFileSync(lastDateFile, "utf8"), "MM-DD-YYYY");
-        if (lastDate.day() == 0) {  // If last was Sunday,
-            bumps = [3, 4];         //  next is Wednesday (+3), then Sunday (+4)
-        } else {                    // If last was Wednesday,
-            bumps = [4, 3];         //  next is Sunday (+4), then Wednesday (+3)
-        }
-        const swtch = [1, 0];       // bumps toggle
-        let s = 0;
-        let nextDate = lastDate.add(bumps[s], 'days');  // nextDate after LastDate processed
-        while (nextDate <= today) {
-            datesToProcess.push(Moment(nextDate));  // Moment() clones nextDate
-            s = swtch[s];
-            nextDate = nextDate.add(bumps[s], 'days');  // Increment nextDate
-        }
-        if (datesToProcess.length > 0) {
-            saveLastDate = true;
-        }
-    } else {
-        // Otherwise, process only the entered date
-        datesToProcess.push(Moment(enteredDate, 'MM-DD-YYYY'));
-    }
-
-    let datesToProcessRange = [];
-    if (datesToProcess.length > 0) {
-        datesToProcessRange = [datesToProcess[0], datesToProcess[datesToProcess.length-1]];
-        console.log("datesToProcessRange: " + datesToProcessRange[0].format("MM/DD/YYYY") + ", " + datesToProcessRange[1].format("MM/DD/YYYY"));
-    }
-
-    // Add "Processing" dates message to index.html
-    let processDates = true;    // Assume there will be dates to process
-    switch (datesToProcess.length) {
-        case 0:
-            msg = "No new dates to process";
-            processDates = false;   // Assumption wrong, there are no dates to process
-            break;
-        case 1:
-            msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY");
-            break;
-        case 2:
-            msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY") + " and " + datesToProcessRange[1].format("MM/DD/YYYY");
-            break;
-        default:
-            msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY") + " through " + datesToProcessRange[1].format("MM/DD/YYYY");
-    }
-    addMsg(msg);
-
-    if (processDates) { // If there are dates to process ...
-        // For each date to be processed:
-        let lastDateToProcess = datesToProcess.length - 1;
-        for (let i = 0; i < datesToProcess.length; i++) {
-            MDY = datesToProcess[i].format("MM/DD/YYYY");
-            YMD = datesToProcess[i].format("YYYY/MM/DD");
-            Day = datesToProcess[i].format("dddd");
-
-            // Set Today's Paper section to be processed according to the day of week
-            switch (Day) {
-                case "Sunday":
-                    sect = "Magazine";
-                    break;
-                case "Wednesday":
-                    sect = "Food";
-                    break;
-                default:
-                    sect = "";
-            }
-
-            // Form Today's Paper URL
-            url = `${URLStart}${YMD}`;
-            if (Day == "Sunday") {
-                url = `${url}${URLSun}`;
-            } else {
-                url = `${url}${URLWed}`;
-            }
-
-            // Create date table row - write to disk in processSelectedArticles 
-            dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
-            dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
-            dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
-            dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
-            dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
-
-            // Call TPscrape to retrieve designated section articles
-            console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
-            var artsArray = await TPscrape(url);
-            console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
-
-            // Add designated section article checkboxes to index.html
-            addArticles(artsArray);
-
-            // Add a Next/Save submit button to index.html
-            if (i < lastDateToProcess) {
-                buttonText = "Next";
-            } else {
-                buttonText = "Save";
-            }
-            let sub = document.createElement('input');
-            sub.className = "btn"
-            sub.type = "submit";
-            sub.value = buttonText;
-            aL.appendChild(sub);
-
-            // Add Next/Save button EventListener and after submit, process checked articles
-            console.log("Mainline: awaiting processSelectedArticles");
-            await processSelectedArticles(artsArray);
-            console.log("Mainline: returned from processSelectedArticles");
-
-            // Repeat for next date to be processed
-        }
-
-        // Store LastDate processed
-        remvAllMsg();
-        if (saveLastDate) {
-            fs.writeFileSync(lastDateFile, MDY, "utf8");
-        }
-
-        // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
-        if (datesToProcessRange.length > 0) {
-            if (updateIndexHTML(datesToProcessRange)) {
-                console.log("index.html updated")
-            } else {
-                console.log("problem updating index.html")
-            }
-        }
-
-        // Add "Review ..." message and a Continue submit button to index.html
-        msg = "Review NYT Recipe index.html, then click Continue";
-        addMsg(msg);
-
-        let sub = document.createElement('input');
-        sub.className = "btn";
-        sub.id = "continueButton";
-        sub.type = "submit";
-        sub.value = "Continue";
-        aL.appendChild(sub);
-
-        // When "Continue" submitted, call processNewDays to look for new and changed days
-        console.log("Mainline: awaiting processNewDays");
-        await processNewDays(datesToProcessRange[0].format("YYYY"));
-        console.log("Mainline: returned from processNewDays");
-
-        // Create listener for insert-closed message from index.js
-        ipcRenderer.on('insert-closed', (event, arg) => {
-            // Window for insert.php was closed
-            console.log("insert window closed");
-            remvAllMsg();
-            msg = "Finished";
-            addMsg(msg);
-        })
-
-        // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
-        ipcRenderer.send('invoke-insert', 'insert');
-    }
-    startButton.classList.remove("disabled");   // Enable the Start button
-
-});
+Mainline(); // Launch puppeteer and add event listener for Start button
