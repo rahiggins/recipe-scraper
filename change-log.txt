@@ -4,13 +4,17 @@
     application proceeds as before.  If past years is chosen, a window soliciting
     the year is displayed, and then the NewDays function and insert.php are invoked.
 
-    - index.html and renderer.js were renamed to current-index.html and current-render.js
+    - index.html and renderer.js were renamed to current-index.html and current-renderer.js
+    - current-index.html was changed to require current-renderer.js
     - index.html was changed to present 'current' and 'past' buttons and to
         require index-renderer.js
     - index-renderer.js was added to direct index.js to open a browser window for
         either current.html or past.html
+    - index.js was changed to listen for the current/past choice from 
+        index-renderer.js via IPC and to open either current.html or past.html
     - past.html and past-renderer.js were added
-    - functions NewDays, addMsg, remvAllMsg were moved from renderer.js to lib.js
+    - functions NewDays, addMsg, remvAllMsg were moved from current-renderer.js
+        to lib.js
     - the 'insert-closed' and 'invoke-insert' ipcRenderer statements were moved 
         to lib.js as function Insert
     - current-renderer.js was changed to require lib.js
