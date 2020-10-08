@@ -1,10 +1,17 @@
 // Modules to control application life and create native browser window
+
+// This module:
+//  - creates IPC listeners
+//   -- to open developer tools (tools)
+//   -- to create a browser window and load either current.html or past.html (mode)
+//   -- to create a browser window and load an NYT article (article-click)
+//   -- to invoke insert.php to update the local database (invoke-insert)
+//  - creates a browser window and loads index.html into it
+
 const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
 
 var win;
-var winID;
-var winBounds;
 var x;
 var y;
 var xArt;
@@ -23,7 +30,6 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
           nodeIntegration: true
         }
     })
-    winID = win.id;
 
   // and load the index.html of the app.
   win.loadFile(load);
