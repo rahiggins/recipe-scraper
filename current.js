@@ -3,7 +3,6 @@ const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
 
 var win;
-var winID;
 var winBounds;
 var x;
 var y;
@@ -11,22 +10,28 @@ var xArt;
 var yArt;
 var articleWindows = [];  // Array of article window IDs
 
-function createWindow(xpos, ypos, wattr, hattr, load) {
+function createWindow () {
   // Create the main browser window.
     win = new BrowserWindow({
-        x: xpos,
-        y: ypos,
-        width: wattr,
-        //width: 1500,  // for devTools
-        height: hattr,
-        webPreferences: {
-          nodeIntegration: true
-        }
-    })
-    winID = win.id;
+    x: 29,
+    y: 46,
+    width: 900,
+    //width: 1500,  // for devTools
+    height: 675,
+    webPreferences: {
+      nodeIntegration: true
+    }
+  })
+
+  // Get window location
+  winBounds = win.getBounds();
+  x = winBounds.x;
+  y = winBounds.y;
+  xArt = x + 400; // Offsets for article windows
+  yArt = y + 15;
 
   // and load the index.html of the app.
-  win.loadFile(load);
+  win.loadFile('index.html');
 
   // Open the DevTools.
   //win.webContents.openDevTools()
@@ -37,21 +42,6 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
 ipcMain.on('tools', () => {
   win.webContents.openDevTools();
 })
-
-// Create an interprocess communications listener to process the
-//  'current'/'past' selection on index.html
-ipcMain.on('mode', (event, arg) => {
-    console.log("index.js - mode: arg: " + arg);
-    if (arg == 'current') {
-        win.close();
-        createWindow(29, 46, 900, 675, 'current.html')
-    } else if (arg == 'past') {
-        win.close();
-        createWindow(29, 46, 600, 450, 'past.html')
-    } else {
-        console.log("Unexpected mode: " + arg)
-    }
-  })
 
 // Create an interprocess communications listener to open articles
 //  in a new window on request by the renderer process
@@ -114,11 +104,7 @@ ipcMain.on('invoke-insert', (event) => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-
-// Create initial window
-app.whenReady().then(() => {
-    createWindow(29, 46, 450, 340, 'index.html');
-})
+app.whenReady().then(createWindow)
 
 // Quit when all windows are closed.
 app.on('window-all-closed', () => {

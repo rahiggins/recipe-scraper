@@ -2,40 +2,32 @@
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>NYT Recipe Scrape</title>
+    <title>NYT Recipe Utilities</title>
     <link rel="stylesheet" href="spectre.min.css">
-    <style>
-      .author {font-size: .6rem;}
-      p {margin-bottom: 0px}
-    </style>
+    <style>      
+    .vertical-centerish {
+      margin: 0;
+      position: absolute;
+      top: 40%;
+      -ms-transform: translateY(-54%);
+      transform: translateY(-40%);
+    }
+      </style>
   </head>
   <body>
-    <div style="padding-top: 1rem; padding-left: 2rem;">
-      <form>
-        <div class="container pb-2 pl-0">
-          <div class="columns col-oneline">
-              <div class="column col-2">      
-                <input class="form-input" type="text" id="dateSpec" name="dateSpec" placeholder="mm/dd/yyyy">
-              </div>
-              <div class="column col-1">
-                <button class="btn" type="submit" id="startButton">Start</button>
-              </div>
+    <div class="container">
+      <div class="columns">
+        <div class="column col-4 col-mx-auto">
+          <div class="btn-group vertical-centerish">
+            <button class="btn" id="current">current</button>
+            <button class="btn" id="past">past</button>
           </div>
         </div>
-      </form>
-      <div id="msgs" class="bg-secondary" style="overflow: hidden"></div>
-      <form name="articleList" id="aList" class="pt-2">
-        <div class="form-group" id="aL">
-        </div>
-      </form>
-      <p id="alP"></p>
-    </div>
-    <div>
-      <p>&nbsp; </p>
+      </div>
     </div>
     <script>
       // You can also require other files to run in this process
-      require('./renderer.js')
+      require('./index-renderer.js')
     </script>
   </body>
 </html>

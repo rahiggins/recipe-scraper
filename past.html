@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>NYT Recipe Scrape, past years</title>
+    <link rel="stylesheet" href="spectre.min.css">
+    <link rel="stylesheet" href="ScraperStyles.css">
+    <!--
+    <style>
+      p {margin-bottom: 0px}
+    </style>
+    -->
+  </head>
+  <body>
+    <div style="padding-top: 1rem; padding-left: 2rem;">
+      <form>
+        <div class="container pb-2 pl-0">
+          <div class="columns col-oneline">
+              <div class="column col-auto">      
+                <input class="form-input"
+                style="width: 2.75rem"
+                type="text" id="yearSpec" name="yearSpec" 
+                placeholder="yyyy"
+                required pattern="[0-9]{4}" title="Four-digit year, yyyy"/>
+              </div>
+              <div class="column col-1">
+                <button class="btn" type="submit"  disabled id="yearButton">Start</button>
+              </div>
+          </div>
+        </div>
+      </form>
+      <div id="msgs" class="bg-secondary" style="overflow: hidden"></div>
+    <div>
+      <p>&nbsp; </p>
+    </div>
+    <script>
+      // You can also require other files to run in this process
+      require('./past-renderer.js')
+    </script>
+  </body>
+</html>

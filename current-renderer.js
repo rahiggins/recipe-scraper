@@ -19,6 +19,7 @@
 //      Listen for reply from index.js process
 //      Send invoke-insert to index.js process
 
+const { addMsg, remvAllMsg, NewDays, Insert } = require('./lib.js'); // Shared scraper functions
 const { app } = require('electron').remote; // Access to app information
 const { ipcRenderer } = require('electron'); // InterProcess Communications
 const Moment = require('moment'); // Date/time functions
@@ -66,34 +67,34 @@ async function launchPup () {
     console.log("launchPup: exiting");
 }
 
-function addMsg(m, opt) {
-    // Add a message to the #msgs div
-    // If opt { indent: true }, add padding-left to message
-    // Called throughout
-
-    if (typeof opt === 'undefined') {
-        opt = {
-            indent: false
-        };
-    }
-    let para = document.createElement("p");
-    if (opt.indent) {
-        para.className = "pl-2";
-    }
-    let txnd = document.createTextNode(m);
-    para.appendChild(txnd);
-    mL.appendChild(para);
-    return;
-}
-
-function remvAllMsg() {
-    // Remove all messages in the #msgs div
-    // Called throughout
-
-    while (mL.firstChild) {
-        mL.removeChild(mL.lastChild);
-    }
-}
+// function addMsg(m, opt) {
+//     // Add a message to the #msgs div
+//     // If opt { indent: true }, add padding-left to message
+//     // Called throughout
+// 
+//     if (typeof opt === 'undefined') {
+//         opt = {
+//             indent: false
+//         };
+//     }
+//     let para = document.createElement("p");
+//     if (opt.indent) {
+//         para.className = "pl-2";
+//     }
+//     let txnd = document.createTextNode(m);
+//     para.appendChild(txnd);
+//     mL.appendChild(para);
+//     return;
+// }
+// 
+// function remvAllMsg() {
+//     // Remove all messages in the #msgs div
+//     // Called throughout
+// 
+//     while (mL.firstChild) {
+//         mL.removeChild(mL.lastChild);
+//     }
+// }
 
 function addProgress(now,max) {
     // Called from sectionScrape
@@ -124,7 +125,7 @@ async function TPscrape(url) {
     var hostnm;
     // Add activity description to index.html
     let msg = "Retrieving Today's Paper page for " + Day + ", " + MDY;
-    addMsg(msg);
+    addMsg(mL, msg);
 
     async function artScrape(url) {
         // Called from sectionScrape
@@ -310,7 +311,7 @@ async function TPscrape(url) {
 
         // Create a "Retrieving n ... articles" <p> element
         let para = document.createElement("p");
-        para.classList = "pr-2 float-left";
+        para.classList = "pr-2 float-left msg";
         let txt = "Retrieving " + arts.length.toString() + " " +sect + " section articles for " + Day + ", " + MDY;
         let txnd = document.createTextNode(txt);
         para.appendChild(txnd);
@@ -424,7 +425,7 @@ function addArticles(arr) {
 
     // Add {Magazine|Food} articles description to index.html
     let msg = sect + " section articles for " + Day + ", " + MDY;
-    addMsg(msg);
+    addMsg(mL, msg);
 
     // Remove throbber
     let element = document.getElementById("lD");
@@ -614,153 +615,182 @@ function updateIndexHTML (dates) {
     return true;
 }
 
-function NewDays(yyyy) {
-    // Called from processNewDays
-    // Input: year (yyyy) of dates being processed
-    // Segment the year's table HTML (~/Sites/NYT Recipes/yyyy/index.html) by day
-    // Determine if each day's segment is new or if it's an update
-
-    console.log("NewDays entered with " + yyyy);
-
-    function back2NL(idx) {
-        // Called from NewDays
-        // Input: index of <tr> element
-        // Returns: index following the new line procedding the input <tr> element
-        // Back up from the <tr> element looking for CRLF or LF or CR
-
-        let nl_index = -1;
-        let nl_look = idx;
-        while (nl_index < 0) {
-            nl_look = nl_look - 2;
-            nl_index = table.substring(nl_look,idx).search(/\r\n|\n|\r/);
-        }
-        nl_index = nl_look + nl_index;
-        let nl_str = table.substr(nl_index,nl_index+3).match(/\r\n|\n|\r/);
-        return nl_index + nl_str[0].length;
-    }
-    
-    function add_class(mk) {
-        // Called from NewDays
-        // Input: table HTML
-        // Returns:  updated table HTML
-        // In the first table row, add a class name to each of the three <td> elements
-        // This is needed because of the addition of the Month order fuction.  Should not be needed after 2020
-
-        if (mk.includes("class=")) {  // Exit if the table HTML already contains class names
-            return mk;
-        }
-        var idx = 0;
-        let classes = ["date", "type", "name"]
-        for (let i = 0; i <= 2; ++i) {
-            let class_insert = ' class="' + classes[i] + '"';
-            idx = mk.indexOf("<td",idx) + 3;
-            mk = mk.slice(0,idx).concat(class_insert,mk.slice(idx));
-            idx += 3;
-        }
-        return mk;
-    }
-    
-    // Read the year's table HTML
-    const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + yyyy + '/index.html';
-    const table = fs.readFileSync(tablePath, "UTF-8").toString();
-    
-    var date_indices = [];
-    var tr = 0;
-    var date_index = 0;
-    var start = 0;
-    var tbody_end_index = 0;
-    var tbody_end_row_index = 0;
-    var dates = table.match(/\d{2}\/\d{2}\/\d{4}/g);    // Array of date (mm/dd/yyyy) strings in table HTML
-    
-    const end = table.length;
-    
-    // Scan the table HTML for 'mm/dd/yyyy' strings until </tbody> is encountered
-    // Find the index of the start of the line containing the <tr> element preceeding the 'mm/dd/yyy' string
-    // Push that index onto the date_indices array
-    TableScan: while (start < end){
-        date_index = table.substr(start).search(/\d{2}\/\d{2}\/\d{4}/);
-        if (date_index > 0) {
-            date_index = date_index + start;
-            start = date_index + 10;
-            tr = table.lastIndexOf("<tr>",date_index);
-            let date_row_index = back2NL(tr);
-            date_indices.push(date_row_index);
-        } else {
-            tbody_end_index = table.substr(start).indexOf("</tbody>") + start;
-            tbody_end_row_index = back2NL(tbody_end_index);
-            date_indices.push(tbody_end_row_index);
-            break TableScan;
-        }
-    }
-    
-    const last_index = date_indices.length-1;
-    // const prolog = table.substring(0,date_indices[0]);
-    // const epilog = table.substring(date_indices[last_index]);
-    var day_markup = '';
-    var keys = [];
-    
-    var Days_path = '/Users/rahiggins/Sites/NYT Recipes/' + yyyy + '/Days/';    // Directory containing day segments
-    var insert_path = '/Applications/MAMP/htdocs/inserts/'; // Directory containing day segments to be inserted 
-    var update_path = '/Applications/MAMP/htdocs/updates/'; // Directory containing day segments for update
-    const newLineChars = '\n\r';
-
-    // Segment table HTML by day
-    for (let i = 0; i < last_index; i++) {
-        day_markup = table.substring(date_indices[i],date_indices[i+1]);
-        
-        if (day_markup.includes("article") || day_markup.includes("recipe")) {
-            // If this day's segment has content (articles or recipes):
-            //  See if a segment for the day already exists in Days_path
-            //  If a segment already exists, see if they're identical
-            //  If they're not identical, add the new segment to update_path
-            //  If a segment for the day doesn't already exist in Days_path,
-            //    add it to Days_path and to insert_path
-            day_markup = add_class(day_markup); // add class names to first row's <td> elements
-            keys = dates[i].split("/"); // Split date into [mm, dd, yyyy]
-            var file_name = keys[2] + "-" + keys[0] + "-" + keys[1] + ".txt";
-            if (fs.existsSync(Days_path + file_name)) {
-                // console.log(file_name + " exists");
-                const existing = fs.readFileSync(Days_path + file_name, "UTF-8").toString();
-                if (existing == day_markup) {
-                    // console.log("Both " + file_name + " are the same");
-                } else { // Used to have a problem with BlueGriffon changing newline codes. This probably isn't needed any more
-                    var diff = false;
-                    if (existing.length == day_markup.length) {
-                        var scanLength = day_markup.length;
-                        var misMatch = false;
-                        for (var j = 0; j < scanLength; j++) {
-                            if (existing[j] !== day_markup[j]) {
-                                if (newLineChars.includes(existing[j]) && newLineChars.includes(day_markup[j])) {
-                                    console.log("Newline mismatch at " + j.toString() + " for " + file_name);
-                                    misMatch = true;                                
-                                } else {
-                                    diff = true;
-                                    break;
-                                }
-                            } 
-                        }
-                        if (misMatch) {
-                            fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
-                            console.log(file_name + " replaced in Days");
-                        }
-                    } else {
-                        diff = true;
-                    }
-                    if (diff) {
-                        addMsg(file_name + " differs, added to updates", {indent: true});
-                        fs.writeFileSync(Days_path + "NotSame_" + file_name, day_markup, "utf8");
-                        fs.writeFileSync(update_path + file_name, day_markup, "utf8");
-                    }
-                }
-    
-            } else {
-                addMsg(file_name + " added to inserts", {indent: true});
-                fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
-                fs.writeFileSync(insert_path + file_name, day_markup, "utf8");
-            }
-        }
-    }
-}
+// function NewDays(yyyy) {
+//     // Called from processNewDays
+//     // Input: year (yyyy) of dates being processed
+//     // Segment the year's table HTML (~/Sites/NYT Recipes/yyyy/index.html) by day
+//     // Determine if each day's segment is new or if it's an update
+// 
+//     console.log("NewDays entered with " + yyyy);
+// 
+//     function back2NL(idx) {
+//         // Called from NewDays
+//         // Input: index of <tr> element
+//         // Returns: index following the new line procedding the input <tr> element
+//         // Back up from the <tr> element looking for CRLF or LF or CR
+// 
+//         let nl_index = -1;
+//         let nl_look = idx;
+//         while (nl_index < 0) {
+//             nl_look = nl_look - 2;
+//             nl_index = table.substring(nl_look,idx).search(/\r\n|\n|\r/);
+//         }
+//         nl_index = nl_look + nl_index;
+//         let nl_str = table.substr(nl_index,nl_index+3).match(/\r\n|\n|\r/);
+//         return nl_index + nl_str[0].length;
+//     }
+//     
+//     function add_class(mk) {
+//         // Called from NewDays
+//         // Input: table HTML
+//         // Returns:  updated table HTML
+//         // In the first table row, add a class name to each of the three <td> elements
+//         // This is needed because of the addition of the Month order fuction.  Should not be needed after 2020
+// 
+//         if (mk.includes("class=")) {  // Exit if the table HTML already contains class names
+//             return mk;
+//         }
+//         var idx = 0;
+//         let classes = ["date", "type", "name"]
+//         for (let i = 0; i <= 2; ++i) {
+//             let class_insert = ' class="' + classes[i] + '"';
+//             idx = mk.indexOf("<td",idx) + 3;
+//             mk = mk.slice(0,idx).concat(class_insert,mk.slice(idx));
+//             idx += 3;
+//         }
+//         return mk;
+//     }
+// 
+//     function find_content(day) {
+//         // Input: Table HTML for one day, extracted from index.html
+//         // Returns: true or false
+//         // Determine whether a day's table HTML has content, i.e. contains
+//         //  a link that is not a link to a Today's Paper page.  
+//         //  Return true if so, false if otherwise.
+//     
+//         let gotContent = false; // return value, defaults to false
+//     
+//         // Split the day's table HTML at '<a' and '</a'
+//         // The resulting array elements alternate between irrelevant strings and 
+//         //   <a> attributes (including href), i.e.:
+//         //   [irrelevant, <a> attributes, irrelevant, <a> attributes, ...]
+//         // If the day's tab;e HTML does not contain any <a> elements, the resulting
+//         //   array is [irrelevant]
+//         let a_attrs = day.split(/<\/*a/g);
+//     
+//         // For each <a> attribute element ...
+//         for (let i = 1; i < a_attrs.length; i = i + 2) {
+//             // console.log(i.toString() + ": " + a_attrs[i]);
+//             if (!a_attrs[i].includes('/todayspaper/')) {  // ... look for todayspaper
+//                 gotContent = true; // not found, then the day has content
+//                 break; // break out of for loop
+//             }
+//         }
+//         // console.log(gotContent)
+//         return gotContent;
+//     }
+//     
+//     // Read the year's table HTML
+//     const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + yyyy + '/index.html';
+//     const table = fs.readFileSync(tablePath, "UTF-8").toString();
+//     
+//     var date_indices = [];
+//     var tr = 0;
+//     var date_index = 0;
+//     var start = 0;
+//     var tbody_end_index = 0;
+//     var tbody_end_row_index = 0;
+//     var dates = table.match(/\d{2}\/\d{2}\/\d{4}/g);    // Array of date (mm/dd/yyyy) strings in table HTML
+//     
+//     const end = table.length;
+//     
+//     // Scan the table HTML for 'mm/dd/yyyy' strings until </tbody> is encountered
+//     // Find the index of the start of the line containing the <tr> element preceeding the 'mm/dd/yyy' string
+//     // Push that index onto the date_indices array
+//     TableScan: while (start < end){
+//         date_index = table.substr(start).search(/\d{2}\/\d{2}\/\d{4}/);
+//         if (date_index > 0) {
+//             date_index = date_index + start;
+//             start = date_index + 10;
+//             tr = table.lastIndexOf("<tr>",date_index);
+//             let date_row_index = back2NL(tr);
+//             date_indices.push(date_row_index);
+//         } else {
+//             tbody_end_index = table.substr(start).indexOf("</tbody>") + start;
+//             tbody_end_row_index = back2NL(tbody_end_index);
+//             date_indices.push(tbody_end_row_index);
+//             break TableScan;
+//         }
+//     }
+//     
+//     const last_index = date_indices.length-1;
+//     // const prolog = table.substring(0,date_indices[0]);
+//     // const epilog = table.substring(date_indices[last_index]);
+//     var day_markup = '';
+//     var keys = [];
+//     
+//     var Days_path = '/Users/rahiggins/Sites/NYT Recipes/' + yyyy + '/Days/';    // Directory containing day segments
+//     var insert_path = '/Applications/MAMP/htdocs/inserts/'; // Directory containing day segments to be inserted 
+//     var update_path = '/Applications/MAMP/htdocs/updates/'; // Directory containing day segments for update
+//     const newLineChars = '\n\r';
+// 
+//     // Segment table HTML by day
+//     for (let i = 0; i < last_index; i++) {
+//         day_markup = table.substring(date_indices[i],date_indices[i+1]);
+//         
+//         if (find_content(day_markup)) {
+//             // If this day's segment has content (links to other than Today's Paper):
+//             //  See if a segment for the day already exists in Days_path
+//             //  If a segment already exists, see if they're identical
+//             //  If they're not identical, add the new segment to update_path
+//             //  If a segment for the day doesn't already exist in Days_path,
+//             //    add it to Days_path and to insert_path
+//             day_markup = add_class(day_markup); // add class names to first row's <td> elements
+//             keys = dates[i].split("/"); // Split date into [mm, dd, yyyy]
+//             var file_name = keys[2] + "-" + keys[0] + "-" + keys[1] + ".txt";
+//             if (fs.existsSync(Days_path + file_name)) {
+//                 // console.log(file_name + " exists");
+//                 const existing = fs.readFileSync(Days_path + file_name, "UTF-8").toString();
+//                 if (existing == day_markup) {
+//                     // console.log("Both " + file_name + " are the same");
+//                 } else { // Used to have a problem with BlueGriffon changing newline codes. This probably isn't needed any more
+//                     var diff = false;
+//                     if (existing.length == day_markup.length) {
+//                         var scanLength = day_markup.length;
+//                         var misMatch = false;
+//                         for (var j = 0; j < scanLength; j++) {
+//                             if (existing[j] !== day_markup[j]) {
+//                                 if (newLineChars.includes(existing[j]) && newLineChars.includes(day_markup[j])) {
+//                                     console.log("Newline mismatch at " + j.toString() + " for " + file_name);
+//                                     misMatch = true;                                
+//                                 } else {
+//                                     diff = true;
+//                                     break;
+//                                 }
+//                             } 
+//                         }
+//                         if (misMatch) {
+//                             fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
+//                             console.log(file_name + " replaced in Days");
+//                         }
+//                     } else {
+//                         diff = true;
+//                     }
+//                     if (diff) {
+//                         addMsg(mL, file_name + " differs, added to updates", {indent: true});
+//                         fs.writeFileSync(Days_path + "NotSame_" + file_name, day_markup, "utf8");
+//                         fs.writeFileSync(update_path + file_name, day_markup, "utf8");
+//                     }
+//                 }
+//     
+//             } else {
+//                 addMsg(mL, file_name + " added to inserts", {indent: true});
+//                 fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
+//                 fs.writeFileSync(insert_path + file_name, day_markup, "utf8");
+//             }
+//         }
+//     }
+// }
 
 async function processNewDays (yyyy) {
     // Called from Mainline
@@ -772,10 +802,10 @@ async function processNewDays (yyyy) {
     return new Promise(function (resolve) {
 		document.getElementById('aList').addEventListener('click', async (evt) => {
             evt.preventDefault();
-            remvAllMsg();
+            remvAllMsg(mL);
             aL.removeChild(aL.lastChild)
-            addMsg("New and updated days:");
-			NewDays(yyyy);
+            addMsg(mL, "New and updated days:");
+			NewDays(yyyy, mL);
 			resolve();  // Resolve Promise
         },  {once: true});
     });    
@@ -794,11 +824,12 @@ async function Mainline() {
         evt.preventDefault();
         console.log("Mainline: Start button clicked, disable Start button");
         startButton.classList.add("disabled");  // Disable the Start button
-        remvAllMsg();   // Remove any previous messages
+        remvAllMsg(mL);   // Remove any previous messages
         let datesToProcess = []; // array of dates (Moment objects) to process
         let saveLastDate = false;   // Save LastDate.txt only if datesToProcess were automatically generated
         let msg;
-        let bumps = [];    // Increments to next day: [3, 4] from Sunday or [4, 3] from Wednesday 
+        let bumps = [];    // Increments to next day: [3, 4] from Sunday or [4, 3] from Wednesday
+
         // Check if a date was entered
         let enteredDate = document.getElementById("dateSpec").value;
         if (enteredDate == "") {
@@ -848,7 +879,7 @@ async function Mainline() {
             default:
                 msg = "Processing " + datesToProcessRange[0].format("MM/DD/YYYY") + " through " + datesToProcessRange[1].format("MM/DD/YYYY");
         }
-        addMsg(msg);
+        addMsg(mL, msg);
 
         if (processDates) { // If there are dates to process ...
             // For each date to be processed:
@@ -915,7 +946,7 @@ async function Mainline() {
             }
 
             // Store LastDate processed
-            remvAllMsg();
+            remvAllMsg(mL);
             if (saveLastDate) {
                 fs.writeFileSync(lastDateFile, MDY, "utf8");
             }
@@ -928,7 +959,7 @@ async function Mainline() {
 
                     // Add "Review ..." message and a Continue submit button to index.html
                     msg = "Review NYT Recipe index.html, then click Continue";
-                    addMsg(msg);
+                    addMsg(mL, msg);
         
                     let sub = document.createElement('input');
                     sub.className = "btn";
@@ -942,23 +973,28 @@ async function Mainline() {
                     await processNewDays(datesToProcessRange[0].format("YYYY"));
                     console.log("Mainline: returned from processNewDays");
         
-                    // Create listener for insert-closed message from index.js
-                    ipcRenderer.on('insert-closed', () => {
-                        // Window for insert.php was closed
-                        console.log("insert window closed");
-                        remvAllMsg();
-                        msg = "Finished";
-                        addMsg(msg);
-                    })
-        
-                    // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
-                    ipcRenderer.send('invoke-insert', 'insert');
+                    // // Create listener for insert-closed message from index.js
+                    // ipcRenderer.on('insert-closed', () => {
+                    //     // Window for insert.php was closed
+                    //     console.log("insert window closed");
+                    //     remvAllMsg(mL);
+                    //     msg = "Finished";
+                    //     addMsg(mL, msg);
+                    // })
+        // 
+                    // // Tell index.js to create a new window to run the insert.php script, which performs MySQL inserts and updates
+                    // ipcRenderer.send('invoke-insert', 'insert');
+
+
+                    // Call Insert to insert/update new and changed days in local database
+                    Insert(mL);
+
                 } else {
                     console.error("Mainliane: problem updating index.html")
                     console.error("newTableHTML:");
                     console.error(newTableHTML);
                     msg = "Problem updating index.html — see console log";
-                    addMsg(msg);
+                    addMsg(mL, msg);
                     ipcRenderer.send('tools', 'open');  // Tell main process to open Developer Tools; displays error logging
                 }
             }
