@@ -10,6 +10,7 @@
     - index-renderer.js was added to direct index.js to open a browser window for
         either current.html or past.html
     - past.html and past-renderer.js were added
-    - functions NewDays, addMsg, remvAllMsg were moved from renerer.js to lib.js
+    - functions NewDays, addMsg, remvAllMsg were moved from renderer.js to lib.js
     - the 'insert-closed' and 'invoke-insert' ipcRenderer statements were moved 
         to lib.js as function Insert
+    - current-renderer.js was changed to require lib.js
