@@ -1,6 +1,6 @@
 10/07/2020
     Added support for past years. The application now presents a choice between
-    processing the current year of past years.  If the current year is chosen, the
+    processing the current year or past years.  If the current year is chosen, the
     application proceeds as before.  If past years is chosen, a window soliciting
     the year is displayed, and then the NewDays function and insert.php are invoked.
 
