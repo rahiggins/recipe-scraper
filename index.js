@@ -11,15 +11,15 @@
 const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
 
-var win;
-var x;
-var y;
-var xArt;
-var yArt;
+var win; // BrowserWindow instance
+var x; // BrowserWindow position
+var y; // BrowserWindow position
+var xArt; // article BrowserWindow position
+var yArt; // article BrowserWindow position 
 var articleWindows = [];  // Array of article window IDs
 
 function createWindow(xpos, ypos, wattr, hattr, load) {
-  // Create the main browser window.
+  // Create a browser window.
     win = new BrowserWindow({
         x: xpos,
         y: ypos,
@@ -38,7 +38,7 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
   xArt = x + 400; // Offsets for article windows relative to current.html window
   yArt = y + 15;
   
-  // and load the index.html of the app.
+  // and load the specified html file.
   win.loadFile(load);
 
   // Open the DevTools.
