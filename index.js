@@ -31,6 +31,13 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
         }
     })
 
+  // Get window location
+  let winBounds = win.getBounds();
+  x = winBounds.x;
+  y = winBounds.y;
+  xArt = x + 400; // Offsets for article windows
+  yArt = y + 15;
+  
   // and load the index.html of the app.
   win.loadFile(load);
 
