@@ -32,8 +32,7 @@ const appDataPath = app.getPath('appData') + "/" + app.name; // Path to app data
 const lastDateFile = appDataPath + '/LastDate.txt';  // Path to last-date-processed file
 // console.log("appDataPath: " + appDataPath);
 var newTableHTML = ''; // Generated table HTML is appended to this
-// const output = "/Users/rahiggins/Sites/NYT Recipes/newday.txt"; // File to accumulate table HTML generated (diagnostic)
-// fs.writeFileSync(output, "");   // Erase any existing output
+const NYTRecipes_path = '/Users/rahiggins/Sites/NYT Recipes';
 
 const URLStart = 'https://www.nytimes.com/issue/todayspaper/';  // Today's Paper URL prefix
 const URLWed = '/todays-new-york-times#food';       // Today's Paper URL Wednesday suffix
@@ -523,7 +522,7 @@ function updateIndexHTML (dates) {
 
     // let errmsg; // Error message
     let year = dates[0].format("YYYY")
-    const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + year + '/index.html';
+    const tablePath = NYTRecipes_path + '/' + year + '/index.html';
     const table = fs.readFileSync(tablePath, "UTF-8").toString();       // Read year page
     // const newTableHTML = fs.readFileSync(output, "UTF-8").toString();   // Read new table HTML created by this app (diagnostic)
     let tableLastIndex = table.length-1;
@@ -816,6 +815,30 @@ async function Mainline() {
     console.log("Entered Mainline, awaiting Puppeteer launch");
     await launchPup();    // Launch Puppeteer
 
+    // Determine the minimum and maximum dates for the type=date input 
+    //  field dateSpec
+    
+    // For the minimum date, find the earliest of the yyyy directories in
+    //  ~/Sites/NYT Recipes/
+    yearPat = new RegExp('[0-9]{4}')
+    let earliest = "9999";
+    fs.readdirSync(NYTRecipes_path, {withFileTypes: true}).forEach(function (dirContent) {
+        if (dirContent.isDirectory() && yearPat.test(dirContent.name)) {
+            if (dirContent.name < earliest) {
+                earliest = dirContent.name;
+            }
+        }
+    });
+
+    // For the maximum date: today.  Locale sv-SE date format is the required YYYY-MM-DD
+    let today = new Date();
+    let todayStr = today.toLocaleString('sv-SE', {timeZone: 'America/Chicago'}).substr(0,10)
+
+    // Set the minimum and Maximum dates
+    let dateInput = document.getElementById('dateSpec');
+    dateInput.min = earliest + "-01-01"
+    dateInput.max = todayStr;
+
     // Add EventListener for Start button
     console.log("Mainline: Adding event listener to Start button");
     startButton = document.getElementById("startButton");
@@ -854,7 +877,7 @@ async function Mainline() {
             }
         } else {
             // Otherwise, process only the entered date
-            datesToProcess.push(Moment(enteredDate, 'MM-DD-YYYY'));
+            datesToProcess.push(Moment(enteredDate));
         }
 
         let datesToProcessRange = [];
