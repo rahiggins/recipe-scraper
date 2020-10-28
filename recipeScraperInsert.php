@@ -101,7 +101,7 @@ for ($i = 0; $i < $insertsCount; $i++ ) {
     $day = $keys[1];
     $month_num = $keys[0];
     $month =  $Months[$month_num];
-    $markup = esc($markup);
+    $markup_esc = esc($markup);
     if ($stmt->execute()) {
         $successfulInserts++;
         if ($write_insert) {
@@ -113,7 +113,7 @@ for ($i = 0; $i < $insertsCount; $i++ ) {
         } else {
             $last_char = ",";
         }
-        $insert = "('".$year."', '".$month_num."', '".$month."', '".$day."', '".$markup."')".$last_char."\n";
+        $insert = "('".$year."', '".$month_num."', '".$month."', '".$day."', '".$markup_esc."')".$last_char."\n";
         fwrite($export, $insert);
         fclose($file);
         unlink($filenm);
@@ -158,7 +158,7 @@ for ($i = 0; $i < $updatesCount; ++$i ) {
     $markup = esc($markup);
     if ($stmt->execute()) {
         $successfulUpdates++;
-        fwrite($export, "UPDATE `days` SET `markup`='".$markup."' WHERE `year`=".$year." AND `month_num`=".$month_num." AND `day`=".$day.";\n");
+        fwrite($export, "UPDATE `days` SET `markup`='".$markup_esc."' WHERE `year`=".$year." AND `month_num`=".$month_num." AND `day`=".$day.";\n");
         fclose($file);
         unlink($filenm);
     } else { 
