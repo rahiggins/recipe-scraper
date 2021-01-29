@@ -18,3 +18,7 @@
     - the 'insert-closed' and 'invoke-insert' ipcRenderer statements were moved 
         to lib.js as function Insert
     - current-renderer.js was changed to require lib.js
+01/28/2021
+    Added support for HTML markup pasted into BluGriffon from recipe-searcher
+    - Updated NewDays function in lib.js to remove a line containing <meta charset= >
+        (added by BlueGriffon) before comparing for changes and before writing to ./Days
