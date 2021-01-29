@@ -210,7 +210,13 @@ function NewDays(yyyy, msgDiv) {
             //    add it to Days_path and to insert_path
             //  If a segment was added to update_path or insert_path, 
             //    set callInsert to true
-            day_markup = add_class(day_markup); // add class names to first row's <td> elements
+
+            // Add class names to first row's <td> elements
+            day_markup = add_class(day_markup);
+
+            // Remove '<meta charset="utf-8">' lines added when HTML is pasted in BlueGriffon
+            day_markup = day_markup.replace(/(\r\n|\n|\r)\s+<meta charset="utf-8">(\r\n|\n|\r)\s+/g, ' ');
+
             keys = dates[i].split("/"); // Split date into [mm, dd, yyyy]
             var file_name = keys[2] + "-" + keys[0] + "-" + keys[1] + ".txt";
             if (fs.existsSync(Days_path + file_name)) {
