@@ -27,7 +27,8 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
         //width: 1500,  // for devTools
         height: hattr,
         webPreferences: {
-          nodeIntegration: true
+          nodeIntegration: true,
+          enableRemoteModule: true
         }
     })
 

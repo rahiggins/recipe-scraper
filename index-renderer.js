@@ -19,7 +19,6 @@
 //      Listen for reply from index.js process
 //      Send invoke-insert to index.js process
 
-const { app } = require('electron').remote; // Access to app information
 const { ipcRenderer } = require('electron'); // InterProcess Communications
 
 // Mainline function
