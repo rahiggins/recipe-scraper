@@ -27,8 +27,7 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
         //width: 1500,  // for devTools
         height: hattr,
         webPreferences: {
-          nodeIntegration: true,
-          enableRemoteModule: true
+          nodeIntegration: true
         }
     })
 
@@ -50,6 +49,14 @@ function createWindow(xpos, ypos, wattr, hattr, load) {
 // Create an interprocess communications listener to open devtools to display error logging
 ipcMain.on('tools', () => {
   win.webContents.openDevTools();
+})
+
+// Return app data path and app name to renderer process
+ipcMain.handle('getAppData', () => {
+  return {
+    path: app.getPath('appData'),
+    name: app.name
+  }
 })
 
 // Create an interprocess communications listener to process the
