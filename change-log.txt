@@ -22,3 +22,7 @@
     Added support for HTML markup pasted into BluGriffon from recipe-searcher
     - Updated NewDays function in lib.js to remove a line containing <meta charset= >
         (added by BlueGriffon) before comparing for changes and before writing to ./Days
+01/31/2021
+    Replace app.remote with handle/invoke
+    - Updated index.js to add ipcMain.handle to return appPath and appName
+    - Updated current-renderer.js to replace app.remote with ipcRenderer.invoke
