@@ -248,9 +248,27 @@ function NewDays(yyyy, msgDiv) {
                         diff = true;
                     }
                     if (diff) {
+
+                        // Existing day file has changed
                         addMsg(msgDiv, file_name + " differs, added to updates", {indent: true});
-                        fs.writeFileSync(Days_path + "NotSame_" + file_name, day_markup, "utf8");
+
+                        // Existing file will be renamed to Old_file
+                        let oldName = "Old_" + file_name;
+
+                        // If Old_file already exists, delete it
+                        if ((fs.existsSync(Days_path + oldName))) {
+                            fs.unlinkSync(Days_path + oldName);
+                        }
+                        // Rename existing file to Old_file
+                        fs.renameSync(Days_path + file_name, Days_path + oldName);
+
+                        // Write updated file to Days
+                        fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
+
+                        // Write updated file to updates
                         fs.writeFileSync(update_path + file_name, day_markup, "utf8");
+
+                        // Set flag to call insert.php
                         callInsert = true;
                     }
                 }

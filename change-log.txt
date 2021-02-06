@@ -26,3 +26,8 @@
     Replace app.remote with handle/invoke
     - Updated index.js to add ipcMain.handle to return appPath and appName
     - Updated current-renderer.js to replace app.remote with ipcRenderer.invoke
+02/05/2021
+    When an existing day is changed, rename existing Days file to Old_yyyy-mm-dd.txt 
+    and write updated file as yyyy-mm-dd.txt, instead of writing updated file to
+    NotSame_yyyy-mm-dd.txt
+    - Updated lib.js NewDays function
