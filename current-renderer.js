@@ -177,7 +177,7 @@ async function TPscrape(url) {
             let titles = $('h1', html);
             //console.log("Titles: " + titles.length.toString());
             title = $(titles[0]).text();
-            //console.log("title: " + title);
+            console.log("title: " + title);
             //console.log("arttype: '" + arttype + "'");
     
         }
@@ -187,7 +187,6 @@ async function TPscrape(url) {
             // Input is article page HTML
             // Creates recipeList array [{name:, link:} ...]
     
-            let noRecipes = true;
             let recipes = false;
     
             // For <p> elements including text "Recipes:", "Recipe:", "Pairing:"
@@ -196,8 +195,7 @@ async function TPscrape(url) {
             $("p.evys1bk0", html).each(function() {
                 let p_text = $(this).text();
                 if (p_text.includes("Recipe:") || p_text.includes("Recipes:") || p_text.includes("Pairings:")) {
-                    noRecipes = false;  // Typical recipes were found, so noRecipes is false
-                    recipes = true;     // Recipes were found
+                    recipes = true;
                     //console.log("Recipes found");
                     $("a", $(this)).each(function() {
                         let recipe = {
@@ -207,44 +205,63 @@ async function TPscrape(url) {
                         //console.log(recipe);
                         recipeList.push(recipe);
                     })
-                } else {
-                    // What won't they think of next - 5 Standout Recipes From Julia Reed 9/2/2020
-                    // Standalone <p> elements consisting solely of a link to a recipe
-                    let paraanch = $("a",this);
-                    if (paraanch.length == 1 && 
-                        paraanch.text() == $(this).text() && 
-                        paraanch.attr("href").includes("cooking.nytimes.com")) {
-                        noRecipes = false;  // Typical recipes were found, so noRecipes is false
-                        recipes = true;     // Recipes were found
-                        let recipe = {
-                            name: paraanch.text(),
-                            link: paraanch.attr("href")
-                        };
-                        // console.log(recipe);
-                        recipeList.push(recipe);
-                    }
+                }
+
+                // What won't they think of next - 5 Standout Recipes From Julia Reed 9/2/2020
+                // Standalone <p> elements consisting solely of a link to a recipe
+                let paraanch = $("a",this);
+                if (paraanch.length == 1 && 
+                    paraanch.text() == $(this).text() && 
+                    paraanch.attr("href").includes("cooking.nytimes.com")) {
+                    recipes = true;     // Recipes were found
+                    let recipe = {
+                        name: paraanch.text(),
+                        link: paraanch.attr("href")
+                    };
+                    //console.log(recipe);
+                    recipeList.push(recipe);
                 }
             })
             
-            if (noRecipes) {
-                // If no typical recipes were found,
-                //  look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com and
-                //  create recipe objects {name: , link:} from them and
-                //  push onto recipeList array
-                $(h2s).has("a").each(function () {
-                    let artHref =  $("a", this).attr("href")
-                    if (artHref.includes("cooking.nytimes.com")) {
-                        //console.log("Alternate recipes found");
-                        recipes = true;
-                        let recipe = {
-                            name: $("a", this).text(),
-                            link: artHref
-                        }
-                        //console.log(recipe);
-                        recipeList.push(recipe)
+            // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com and
+            //  create recipe objects {name: , link:} from them and
+            //  push onto recipeList array
+            $(h2s).has("a").each(function () {
+                let artHref =  $("a", this).attr("href")
+                if (artHref.includes("cooking.nytimes.com")) {
+                    //console.log("Alternate recipes found");
+                    recipes = true;
+                    let recipe = {
+                        name: $("a", this).text(),
+                        link: artHref
                     }
-                })
-            }
+                    //console.log(recipe);
+                    recipeList.push(recipe)
+                }
+            })
+
+            // Look for h3 elements that contain links and whose text includes 'Recipe[s]:'
+            //  2/14/2021 Rediscovering Russian Salad
+            //  Create recipe objects {name: , link:} from them and
+            //  push onto recipeList array
+            $("h3", html).has("a").each(function () {
+                if ($(this).text().search(/Recipe(s*):/) >= 0 ) {
+                    // console.log("H3 recipes found");
+                    recipes = true;
+                    $('a',this).each(function () {
+                        // console.log("Title: " + $(this).text());
+                        // console.log("Link: " + $(this).attr("href"));
+                        let recipe = {
+                            name: $(this).text(),
+                            link: $(this).attr('href')
+                        }
+                        // console.log(recipe);
+                        recipeList.push(recipe)
+                    });
+                }
+        
+            });
+
             return recipes;
         }
     
