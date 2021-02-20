@@ -226,6 +226,7 @@ async function TPscrape(url) {
             // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com and
             //  create recipe objects {name: , link:} from them and
             //  push onto recipeList array
+            //  8/14/2020 A Summer Lunch That Feels Like a Splurge
             $(h2s).has("a").each(function () {
                 let artHref =  $("a", this).attr("href")
                 if (artHref.includes("cooking.nytimes.com")) {
@@ -261,7 +262,10 @@ async function TPscrape(url) {
                 }
         
             });
-
+            
+            if (recipes) {
+                console.log("Found " + recipeList.length.toString() + " recipes")
+            }
             return recipes;
         }
     
