@@ -31,3 +31,8 @@
     and write updated file as yyyy-mm-dd.txt, instead of writing updated file to
     NotSame_yyyy-mm-dd.txt
     - Updated lib.js NewDays function
+02/19/2021
+    Add support for recipe links in H3 elments
+    - Updated the GetRecipes function in current-renderer.js to look for recipe links in H3 elements and also
+    - Updated GetRecipes to always check for all recipe link types, instead of checking a link type only 
+        if the prior test for a link type found no instances.
