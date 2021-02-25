@@ -25,7 +25,7 @@ const Moment = require('moment'); // Date/time functions
 const fs = require('fs'); // Filesystem functions
 const puppeteer = require('puppeteer'); // Chrome API
 const needle = require('needle'); // Lightweight HTTP client
-const $ = require('cheerio'); // core jQuery
+const cheerio = require('cheerio'); // core jQuery
 
 var newTableHTML = ''; // Generated table HTML is appended to this
 const NYTRecipes_path = '/Users/rahiggins/Sites/NYT Recipes';
@@ -140,14 +140,14 @@ async function TPscrape(url) {
         let recipeList = [];
     
     
-        function getTitle(html) {
+        function getTitle($) {
             // Called from artScrape
-            // Input is article page HTML
+            // Input is a Cheerio object containing article page HTML
             // Sets variables h2s, ATD_present, arttype, title
     
             // See if And to Drink is present
             ATD_present = "";
-            h2s = $('h2.eoo0vm40', html); // h2s also referenced in recipes()
+            h2s = $('h2.eoo0vm40'); // h2s also referenced in recipes()
             $(h2s).each(function() {
                 if ($(this).text().includes("And to Drink")) {
                     ATD_present = " *";
@@ -163,8 +163,8 @@ async function TPscrape(url) {
             // Check for title decoration (e.g. "Eat", "A Good Appetite", "Wines of the Times", "Spirits of the Times", "Ales of the Times")
             //  and adjust "article" designation (table column 2)
             arttype = "article";
-            //console.log("xOfTimes(.e6idgb70): " + $(".e6idgb70", html).length.toString());
-            $(".e6idgb70", html).each(function() {
+            //console.log("xOfTimes(.e6idgb70): " + $(".e6idgb70").length.toString());
+            $(".e6idgb70").each(function() {
                 if ($(this).text().length > 0) {
                     //console.log("e6idgb70 text: " + $(this).text());
                     arttype = $(this).text().split(/ OF THE TIMES/i)[0].toLowerCase();
@@ -174,7 +174,7 @@ async function TPscrape(url) {
             })
     
             // Get title - first Heading 1
-            let titles = $('h1', html);
+            let titles = $('h1');
             //console.log("Titles: " + titles.length.toString());
             title = $(titles[0]).text();
             console.log("title: " + title);
@@ -182,17 +182,19 @@ async function TPscrape(url) {
     
         }
     
-        function getRecipes(html) {
+        function getRecipes($) {
             // Called from artScrape
-            // Input is article page HTML
+            // Input is a Cheerio object containing article page HTML
             // Creates recipeList array [{name:, link:} ...]
     
             let recipes = false;
     
-            // For <p> elements including text "Recipes:", "Recipe:", "Pairing:"
-            //  create recipe objects {name: , link:} from <a> elements 
+            // Look for recipe links, which occur in several formats
+            //  Create recipe objects {name: , link:} from <a> elements 
             //  and push onto recipeList array
-            $("p.evys1bk0", html).each(function() {
+            //
+            // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:"
+            $("p.evys1bk0").each(function() {
                 let p_text = $(this).text();
                 if (p_text.includes("Recipe:") || p_text.includes("Recipes:") || p_text.includes("Pairings:")) {
                     recipes = true;
@@ -218,14 +220,18 @@ async function TPscrape(url) {
                         name: paraanch.text(),
                         link: paraanch.attr("href")
                     };
-                    //console.log(recipe);
-                    recipeList.push(recipe);
+
+                    // Check for duplicate recipe link before adding recipe to recipeList
+                    //  For Maximum Flavor, Make These Spice Blends at Home - 2/24/2021
+                    let dup = recipeList.filter(item => (item.link == recipe.link));
+                    if (dup.length == 0) {
+                        // console.log(recipe);
+                        recipeList.push(recipe)
+                    }
                 }
             })
             
-            // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com and
-            //  create recipe objects {name: , link:} from them and
-            //  push onto recipeList array
+            // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com
             //  8/14/2020 A Summer Lunch That Feels Like a Splurge
             $(h2s).has("a").each(function () {
                 let artHref =  $("a", this).attr("href")
@@ -236,16 +242,19 @@ async function TPscrape(url) {
                         name: $("a", this).text(),
                         link: artHref
                     }
-                    //console.log(recipe);
-                    recipeList.push(recipe)
+
+                    // Check for duplicate recipe link before adding recipe to recipeList
+                    let dup = recipeList.filter(item => (item.link == recipe.link));
+                    if (dup.length == 0) {
+                        // console.log(recipe);
+                        recipeList.push(recipe)
+                    }
                 }
             })
 
             // Look for h3 elements that contain links and whose text includes 'Recipe[s]:'
             //  2/14/2021 Rediscovering Russian Salad
-            //  Create recipe objects {name: , link:} from them and
-            //  push onto recipeList array
-            $("h3", html).has("a").each(function () {
+            $("h3").has("a").each(function () {
                 if ($(this).text().search(/Recipe(s*):/) >= 0 ) {
                     // console.log("H3 recipes found");
                     recipes = true;
@@ -256,8 +265,13 @@ async function TPscrape(url) {
                             name: $(this).text(),
                             link: $(this).attr('href')
                         }
-                        // console.log(recipe);
-                        recipeList.push(recipe)
+
+                        // Check for duplicate recipe link before adding recipe to recipeList
+                        let dup = recipeList.filter(item => (item.link == recipe.link));
+                        if (dup.length == 0) {
+                            // console.log(recipe);
+                            recipeList.push(recipe)
+                        }
                     });
                 }
         
@@ -271,16 +285,16 @@ async function TPscrape(url) {
     
         // Retrieve article page
         const resp = await needle("get", url);
-        let html = resp.body;
+        let $ = cheerio.load(resp.body);
     
-        getTitle(html);    // Get arttype, title and ATD_present
+        getTitle($);    // Get arttype, title and ATD_present
         // Create article table row
         let tableHTML = "";
         tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>" + arttype + "<br>\n";
         tableHTML = tableHTML + '                </td>\n                <td><a href="';
         tableHTML = tableHTML + url + '">' + title + "</a>" + ATD_present + "</td>\n              </tr>\n";
     
-        let hasRecipes = getRecipes(html);  // Get recipes
+        let hasRecipes = getRecipes($);  // Get recipes
         // Create recipe table rows
         for (const i in recipeList) {
             tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>recipe<br>\n";
@@ -296,9 +310,9 @@ async function TPscrape(url) {
         };
     }
 
-    async function sectionScrape(html) {
+    async function sectionScrape($) {
         // Called from TPscrape
-        // Input is Today's Paper page HTML
+        // Input is a Cheerio object containing Today's Paper page HTML
         // For each article in the designated section:
         //  Create an article object {title:, author:, href:}
         //  Call artScrape to get { hasRecipes:, html:}
@@ -311,7 +325,7 @@ async function TPscrape(url) {
         let articles = [];  // Array of article objects
 
         // Locate the target section (anch[1])
-        let an = $("a", html).filter(function() {
+        let an = $("a").filter(function() {
             return $(this).attr("name") == anch[1];
         })
         //console.log("Number of anchors: " + an.length.toString());
@@ -390,8 +404,9 @@ async function TPscrape(url) {
     hostnm = url_parts[1];
     // console.log("url_parts: " + prot + " " + hostnm);
     // Retrieve page html and call sectionScrape to extract articles
-    const html = await page.content();
-    let scrape = await sectionScrape(html);
+    let html = await page.content();
+    let $ = cheerio.load(html);
+    let scrape = await sectionScrape($);
     //console.log("TPscrape: sectionScrape output - " + JSON.stringify(scrape[0]));
     //console.log(scrape)
     console.log("TPscrape: exiting  for " + url)

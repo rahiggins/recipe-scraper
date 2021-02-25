@@ -35,4 +35,13 @@
     Add support for recipe links in H3 elments
     - Updated the GetRecipes function in current-renderer.js to look for recipe links in H3 elements and also
     - Updated GetRecipes to always check for all recipe link types, instead of checking a link type only 
-        if the prior test for a link type found no instances.
+        if the prior test for a link type found no instances. 
+02/24/2021
+    Consolidate Cheerio HTML loads and check for duplicate recipe links in an article
+    - Updated current-renderer.js function artScrape to load article page HTML into a Cheerio object and
+        pass that object to subfunctions getTitle and getRecipe, instead of passing the article page HTML
+        to those subfunctions
+    - Updated current-renderer.js function TPScrape to load Today's Paper HTML into a Cheerio and pass that
+        object to subfunction sectionScrape, instead of passing the Today's Paper HTML to that subfunction
+    - Updated current-renderer.js function artScrape subfunction getRecipe to check the recipeList array
+        for a duplicate recipe link before pushing a recipe object to the array
