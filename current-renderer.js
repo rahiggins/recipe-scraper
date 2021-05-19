@@ -682,25 +682,17 @@ async function Mainline() {
     // Determine the minimum and maximum dates for the type=date input 
     //  field dateSpec
     
-    // For the minimum date, find the earliest of the yyyy directories in
-    //  ~/Sites/NYT Recipes/
-    yearPat = new RegExp('[0-9]{4}')
-    let earliest = "9999";
-    fs.readdirSync(NYTRecipes_path, {withFileTypes: true}).forEach(function (dirContent) {
-        if (dirContent.isDirectory() && yearPat.test(dirContent.name)) {
-            if (dirContent.name < earliest) {
-                earliest = dirContent.name;
-            }
-        }
-    });
-
     // For the maximum date: today.  Locale sv-SE date format is the required YYYY-MM-DD
     let today = new Date();
     let todayStr = today.toLocaleString('sv-SE', {timeZone: 'America/Chicago'}).substr(0,10)
 
-    // Set the minimum and Maximum dates
+    // The minimum date is 2018-02-04 because the format of the Today's Paper 
+    //  article list changed on 2018-02-04 and the prior format is not
+    //  supported by this code.
+
+    // Set the minimum and maximum dates.
     let dateInput = document.getElementById('dateSpec');
-    dateInput.min = earliest + "-01-01"
+    dateInput.min = "2018-02-04"
     dateInput.max = todayStr;
 
     // Add EventListener for Start button
