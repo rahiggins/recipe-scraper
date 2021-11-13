@@ -3,6 +3,8 @@
 /node_modules
 /package-lock.json
 eslintrc.json
+problems.txt
+Epoch branch changes.txt
 spectre.min.css
 recipe-scraper.png
 recipe-scraper.svg

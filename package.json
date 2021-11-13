@@ -16,6 +16,7 @@
     "needle": "^2.5.0",
     "newdays": "file:../newdays",
     "puppeteer": "^3.0.3",
+    "request": "^2.88.2",
     "spectre.css": "^0.5.8",
     "utf-8-validate": "^5.0.2"
   },
