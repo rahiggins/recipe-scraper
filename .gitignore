@@ -3,6 +3,10 @@
 /node_modules
 /package-lock.json
 eslintrc.json
+<<<<<<< Updated upstream
+=======
+problems.txt
+>>>>>>> Stashed changes
 spectre.min.css
 recipe-scraper.png
 recipe-scraper.svg
