@@ -3,15 +3,7 @@
 /node_modules
 /package-lock.json
 eslintrc.json
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
 problems.txt
->>>>>>> Stashed changes
-=======
-problems.txt
-Epoch branch changes.txt
->>>>>>> 5fc779da2b0cea28ab36a851bf8160f874e592bf
 spectre.min.css
 recipe-scraper.png
 recipe-scraper.svg
