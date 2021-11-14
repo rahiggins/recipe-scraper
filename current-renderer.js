@@ -2,7 +2,46 @@
 // be executed in the renderer process for that window.
 // All of the Node.js APIs are available in this process.
 
+// recipe-scraper (current) scrapes Today's Paper pages for food articles and
+//  scrapes those aritcles for recipes
+
+// Epochs version 0.1
+//  The Epochs branch of recipe-scraper supports Today's Paper pages back to
+//  their inception on 4/2/2006 by catering to the Today's Paper page format
+//  change on 12/24/2017.
+
 // Code structure:
+//
+//  Global variable definitions
+//  Global function definitions
+//   function Log
+//   function addProgress
+//   function createButton
+//  
+//  function TPscrape
+//   function artScrape
+//    function getTitle
+//    function getRecipes
+//   function sectionScrape
+//
+//  function addArticles
+//   function articleListen
+//    function articleClick
+//
+//  function processSelectedArticles
+//
+//  function updateIndexHTML
+// 
+//  function processNewDays
+//
+//  function checkExisting
+//
+//  function tableCompare
+//
+//  function Mainline
+//   function launchPup
+
+// Program flow:
 //
 //   Mainline
 //    Launch Puppeteer
@@ -16,7 +55,7 @@
 //      |_ Call processSelectedArticles
 //      Call updateIndexHTML
 //      Call processNewDays
-//      Listen for reply from index.js process
+//      Listen for reply to invoke-insert from index.js process
 //      Send invoke-insert to index.js process
 
 const { addMsg, remvAllMsg, NewDays, Insert } = require('./lib.js'); // Shared scraper functions
@@ -27,13 +66,22 @@ const puppeteer = require('puppeteer'); // Chrome API
 const needle = require('needle'); // Lightweight HTTP client
 const cheerio = require('cheerio'); // core jQuery
 
-var newTableHTML = ''; // Generated table HTML is appended to this
-const NYTRecipes_path = '/Users/rahiggins/Sites/NYT Recipes';
+const request = require('request'); // Simple HTTP request client
+const util = require('util');   // node.js utilities
 
-const URLStart = 'https://www.nytimes.com/issue/todayspaper/';  // Today's Paper URL prefix
-const URLWed = '/todays-new-york-times#food';       // Today's Paper URL Wednesday suffix
-const URLSun = '/todays-new-york-times#magazine';   // Today's Paper URL Sunday suffix
+// Create a function that returns a promise from a request.head function call
+const requestPromise = util.promisify(request.head) 
+
+var newTableHTML = ''; // Generated table HTML is appended to this
+const NYTRecipes_path = '/Users/rahiggins/Sites/NYT Recipes/';
+
+const URLStartCurrent = 'https://www.nytimes.com/issue/todayspaper/';  // Today's Paper URL current prefix
+const URLStartPast = 'https://www.nytimes.com/indexes/';  // Today's Paper URL past prefix
+const URLEndCurrent = '/todays-new-york-times';       // Today's Paper URL current suffix
+const URLEndPast = '/todayspaper/index.html';   // Today's Paper URL past suffix
 //const today = Moment();
+
+var debug = true;
 var url;
 var MDY;    // MM/DD/YYYY
 var YMD;    // YYYY/MM/DD
@@ -47,20 +95,22 @@ var startButton;    // Start button element
 
 const aL = document.getElementById('aL');       // article list div
 const mL = document.getElementById('msgs');     // messages list div
+const buttons = document.getElementById('buttons');     // tableCompare buttons div
+const tableDiv = document.getElementById('tableDiv');   // tableCompare table div
+const epochDate = Moment("2017-12-24")          // first date for current TP format
+const anotherEpochDate = Moment('2010-10-27');  // first date for columnGroup TP format
+var currentEpoch;                               // boolean
+var dateEntered;                                // boolean
 
 // Function definitions
 
-async function launchPup () {
-    // Launch Puppeteer and create a page
-    // Called from Mainline
-
-    console.log("launchPup: entered");
-    browser = await puppeteer.launch();
-    page = await browser.newPage();
-    //await page.setDefaultNavigationTimeout(0);
-    page.setDefaultNavigationTimeout(0);
-    console.log("launchPup: exiting");
+function Log (text) {
+    // If debugging, write text to console.log
+    if (debug) {
+        console.log(text)
+    }
 }
+
 
 // function addMsg(m, opt) {
 //     // Add a message to the #msgs div
@@ -91,19 +141,13 @@ async function launchPup () {
 //     }
 // }
 
-function addProgress(now,max) {
-    // Called from sectionScrape
-    // Input:   now - number of articles retrieved
-    //          max - number of articles to be retrieved
-    // return a progress bar element
-
-    let prog = document.createElement("progress");
-    prog.id = "artProg";
-    prog.classList = " progress float-left";
-    prog.style.paddingTop = "28px"; // aligns progress bar with adjacent text, derived empirically
-    prog.max = max;
-    prog.value = now;
-    return prog;
+function createButton(id, text) {
+    let button = document.createElement('input');
+    button.className = "btn";
+    button.id = id;
+    button.type = "submit";
+    button.value = text;
+    return button
 }
 
 async function TPscrape(url) {
@@ -116,6 +160,7 @@ async function TPscrape(url) {
 
     console.log("TPscrape: entered for " + url)
     var anch = url.split("#");  // ["Today's Paper url", "section name"]
+    Log("anch: " + anch)
     var prot;
     var hostnm;
     // Add activity description to index.html
@@ -132,6 +177,8 @@ async function TPscrape(url) {
         //   - article recipes
         // Form table HTML for article title and recipes
         // Return { hasRecipes:, html: }
+
+        console.log("artScrape entered with url: " + url)
 
         let title;
         let arttype;
@@ -163,22 +210,27 @@ async function TPscrape(url) {
             // Check for title decoration (e.g. "Eat", "A Good Appetite", "Wines of the Times", "Spirits of the Times", "Ales of the Times")
             //  and adjust "article" designation (table column 2)
             arttype = "article";
-            //console.log("xOfTimes(.e6idgb70): " + $(".e6idgb70").length.toString());
+            let articleTypes = ['eat', 'a good appetite', 'city kitchen', 'cookbooks', 'recipe lab', 'restaurant takeaway', 'recipes for health']
+            console.log("xOfTimes(.e6idgb70): " + $(".e6idgb70").length.toString());
             $(".e6idgb70").each(function() {
                 if ($(this).text().length > 0) {
-                    //console.log("e6idgb70 text: " + $(this).text());
+                    console.log("e6idgb70 text: " + $(this).text());
                     arttype = $(this).text().split(/ OF THE TIMES/i)[0].toLowerCase();
-                    if (arttype.trim() == "eat" || arttype.trim() == "a good appetite") {arttype = "article"}
+                    if (articleTypes.includes(arttype.trim())) {arttype = "article"}
                     if (arttype.trim() == "wines") {arttype = "wine"}
                 }
             })
     
             // Get title - first Heading 1
             let titles = $('h1');
-            //console.log("Titles: " + titles.length.toString());
+            console.log("Titles: " + titles.length.toString());
+            if (titles.length.toString() == 0) {
+                console.log("Page html:")
+                console.log($.html())
+            }
             title = $(titles[0]).text();
             console.log("title: " + title);
-            //console.log("arttype: '" + arttype + "'");
+            console.log("arttype: '" + arttype + "'");
     
         }
     
@@ -186,6 +238,7 @@ async function TPscrape(url) {
             // Called from artScrape
             // Input is a Cheerio object containing article page HTML
             // Creates recipeList array [{name:, link:} ...]
+            Log("getRecipes entered")
     
             let recipes = false;
     
@@ -193,19 +246,23 @@ async function TPscrape(url) {
             //  Create recipe objects {name: , link:} from <a> elements 
             //  and push onto recipeList array
             //
-            // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:"
+            // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:" (5/23/2021)
             $("p.evys1bk0").each(function() {
                 let p_text = $(this).text();
-                if (p_text.includes("Recipe:") || p_text.includes("Recipes:") || p_text.includes("Pairings:")) {
+                // console.log("p.evys1bk0 loop - <p> text: " + p_text)
+                if (p_text.match(/Recipe[s]?:|Pairings:|Eat:/) != null) {
                     recipes = true;
-                    //console.log("Recipes found");
+                    console.log("Recipes found - " + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:"');
                     $("a", $(this)).each(function() {
-                        let recipe = {
-                            name: $(this).text(),
-                            link: $(this).attr("href")
-                        };
-                        //console.log(recipe);
-                        recipeList.push(recipe);
+                        let name = $(this).text().trim();
+                        if (name != "") { // 4/23/2014 - duplicate <a> elements, 2nd with no text
+                            let recipe = {
+                                name: name,
+                                link: $(this).attr("href")
+                            };
+                            console.log(recipe);
+                            recipeList.push(recipe);
+                        }
                     })
                 }
 
@@ -236,7 +293,7 @@ async function TPscrape(url) {
             $(h2s).has("a").each(function () {
                 let artHref =  $("a", this).attr("href")
                 if (artHref.includes("cooking.nytimes.com")) {
-                    //console.log("Alternate recipes found");
+                    console.log("Alternate recipes found - H2 elements");
                     recipes = true;
                     let recipe = {
                         name: $("a", this).text(),
@@ -256,11 +313,11 @@ async function TPscrape(url) {
             //  2/14/2021 Rediscovering Russian Salad
             $("h3").has("a").each(function () {
                 if ($(this).text().search(/Recipe(s*):/) >= 0 ) {
-                    // console.log("H3 recipes found");
+                    console.log("H3 recipes found");
                     recipes = true;
                     $('a',this).each(function () {
-                        // console.log("Title: " + $(this).text());
-                        // console.log("Link: " + $(this).attr("href"));
+                        console.log("Title: " + $(this).text());
+                        console.log("Link: " + $(this).attr("href"));
                         let recipe = {
                             name: $(this).text(),
                             link: $(this).attr('href')
@@ -269,7 +326,7 @@ async function TPscrape(url) {
                         // Check for duplicate recipe link before adding recipe to recipeList
                         let dup = recipeList.filter(item => (item.link == recipe.link));
                         if (dup.length == 0) {
-                            // console.log(recipe);
+                            console.log(recipe);
                             recipeList.push(recipe)
                         }
                     });
@@ -283,21 +340,34 @@ async function TPscrape(url) {
             return recipes;
         }
     
-        // Retrieve article page
-        const resp = await needle("get", url);
+        // Retrieve article page (following redirects)
+        const resp = await needle("get", url, {follow_max: 10});
         let $ = cheerio.load(resp.body);
     
         getTitle($);    // Get arttype, title and ATD_present
         // Create article table row
         let tableHTML = "";
-        tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>" + arttype + "<br>\n";
+        tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>" + arttype + "\n";
         tableHTML = tableHTML + '                </td>\n                <td><a href="';
         tableHTML = tableHTML + url + '">' + title + "</a>" + ATD_present + "</td>\n              </tr>\n";
     
         let hasRecipes = getRecipes($);  // Get recipes
         // Create recipe table rows
         for (const i in recipeList) {
-            tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>recipe<br>\n";
+
+            // For each recipe's URL,Look for redirects from www.nytimes.com
+            //  to cooking.nytimes.com.  If found, replace the recipe's 
+            //  www.nytimes.com URL with the cooking.nytimes.com URL
+            //  e.g. https://www.nytimes.com/2009/01/21/dining/211prex.html
+            if (recipeList[i].link.includes("www.nytimes.com")) {
+                let redirect =  await requestPromise(recipeList[i].link)
+                if (redirect.request.uri.href.includes("cooking.nytimes.com")) {
+                    Log("Redirect: " + recipeList[i].link + " => " + redirect.request.uri.href);
+                    recipeList[i].link = redirect.request.uri.href
+                }
+            }
+
+            tableHTML = tableHTML + "              <tr>\n                <td><br>\n                </td>\n                <td>recipe\n";
                     tableHTML = tableHTML + '                </td>\n                <td><a href="';
                     tableHTML = tableHTML + recipeList[i].link + '">' + recipeList[i].name + "</a></td>\n              </tr>\n";
         }
@@ -321,19 +391,64 @@ async function TPscrape(url) {
         // Return array of article objects [{title:, author:, href:, hasRecipes:, html: } ...]
 
         console.log("Entering sectionScrape");
+        console.log("currentEpoch: " + currentEpoch)
 
+        function addProgress(now,max) {
+            // Called from sectionScrape
+            // Input:   now - number of articles retrieved
+            //          max - number of articles to be retrieved
+            // return a progress bar element
+        
+            let prog = document.createElement("progress");
+            prog.id = "artProg";
+            prog.classList = " progress float-left";
+            prog.style.paddingTop = "28px"; // aligns progress bar with adjacent text, derived empirically
+            prog.max = max;
+            prog.value = now;
+            return prog;
+        }
+        
         let articles = [];  // Array of article objects
 
         // Locate the target section (anch[1])
-        let an = $("a").filter(function() {
-            return $(this).attr("name") == anch[1];
-        })
+        //let an = $("a").filter(function() {
+        //    return $(this).attr("name") == anch[1];
+        //})
         //console.log("Number of anchors: " + an.length.toString());
-        // 
-        let sectionList = $(an).siblings('ol'); // ordered list following section
-        //console.log("Number of lists: " + sectionList.length.toString());
-        let arts = $(sectionList).children("li"); // list items (articles) of ordered list following section
-        //console.log("Number of articles: " + arts.length.toString());
+
+        let sectionNames = ["magazine", "food", "dining", "diningin,diningout"]
+        let an = $("a").filter(function() {
+            let name = $(this).attr("name");
+            if (name == undefined) {
+                return false
+            } else {
+                return sectionNames.includes(name.replace(/\s/g, "").toLowerCase())
+            }
+        })
+
+        //console.log("Number of anchors: " + an.length.toString())
+        console.log("Section name: " + $(an).attr("name"))
+        sect = $(an).attr("name")
+
+        let arts;
+        if (currentEpoch) {
+        
+            // 
+            let sectionList = $(an).siblings('ol'); // ordered list following section
+            Log("Number of lists: " + sectionList.length.toString());
+            arts = $(sectionList).children("li"); // list items (articles) of ordered list following section
+            //console.log("Number of articles: " + arts.length.toString());
+
+        } else {
+
+            let colGroupParent = $(an).parents().filter(function() {
+                return $(this).attr("class") == "columnGroup";
+            })
+            Log("colGroupParent length: " + colGroupParent.length.toString());
+
+            arts = $('li', colGroupParent);
+        }
+        Log("Number of articles: " + arts.length.toString());
 
         // Create a float-left div
         let sectArtDiv = document.createElement("div");
@@ -342,7 +457,7 @@ async function TPscrape(url) {
         // Create a "Retrieving n ... articles" <p> element
         let para = document.createElement("p");
         para.classList = "pr-2 float-left msg";
-        let txt = "Retrieving " + arts.length.toString() + " " +sect + " section articles for " + Day + ", " + MDY;
+        let txt = "Retrieving " + arts.length.toString() + " " + sect + " section articles for " + Day + ", " + MDY;
         let txnd = document.createTextNode(txt);
         para.appendChild(txnd);
 
@@ -357,17 +472,45 @@ async function TPscrape(url) {
 
         for (let a = 0; a < arts.length; a++) {  
             // for each article, collect title, author and link href
+            let artObj;
+            let title;
+            let author;
             let link = $(arts[a]).find("a");
-            let h2 = $(link).find("h2");
-            //console.log($(h2).text());
-            //console.log(prot + "://" + hostnm + $(link).attr("href"));
-            let author = $(arts[a]).find("span.css-1n7hynb")
-            //console.log("Author: " + author.text());
-            let artObj = {  // create an article object
-                title: $(h2).text(),
-                author: $(author).text(),
-                href: prot + "//" + hostnm + $(link).attr("href")
-            };
+
+            if (currentEpoch) {
+                let h2 = $(link).find("h2");
+                Log("Article title: " + $(h2).text());
+                Log("Article href: " + prot + "://" + hostnm + $(link).attr("href"));
+                author = $(arts[a]).find("span.css-1n7hynb")
+                Log("Author: " + author.text());
+                artObj = {  // create an article object
+                    title: $(h2).text(),
+                    author: $(author).text(),
+                    href: prot + "//" + hostnm + $(link).attr("href")
+                };
+            } else {
+                title = $(link).text().trim();
+                Log("Title: " + title);
+                let href = $(link).attr("href")
+                if (!$(link).attr("href").startsWith("http")) {
+                    href = prot + "://" + hostnm + $(link).attr("href")
+                }
+                href = href.split('?')[0]
+                Log("href: " + href);
+                let byLine = $(arts[a]).find("div.byline")
+                if (byLine.length > 0) {
+                    author = $(arts[a]).find("div.byline").text().split(/By|by/)[1].trim()
+                } else {
+                    author = "";
+                }
+                Log("Author: " + author);
+                artObj = {  // create an article object
+                    title: title,
+                    author: author,
+                    href: href
+                };
+            }
+
             let aTH = await artScrape(artObj.href);
             artObj.hasRecipes = aTH.hasRecipes;
             artObj.html = aTH.html;
@@ -398,11 +541,17 @@ async function TPscrape(url) {
         let results = [];
         results.push(window.location.protocol);
         results.push(window.location.host);
+        results.push(window.location.href);
+        results.push(window.location.hostname);
+        results.push(window.location.pathname)
         return results;
     })
     prot = url_parts[0];
     hostnm = url_parts[1];
-    // console.log("url_parts: " + prot + " " + hostnm);
+    Log("url_parts: " + prot + " " + hostnm);
+    Log("w.l.href: " + url_parts[2]);
+    Log("w.l.hostname: " + url_parts[3]);
+    Log("w.l.pathname: " + url_parts[4]);
     // Retrieve page html and call sectionScrape to extract articles
     let html = await page.content();
     let $ = cheerio.load(html);
@@ -412,27 +561,8 @@ async function TPscrape(url) {
     console.log("TPscrape: exiting  for " + url)
     return scrape;  // array of article objects - [{title:, author:, href:, hasRecipes:, html:}, ...]
 }
-function articleListen(arr) {
-    // Called from addArticles
-    // Input is the article object passed to addArticles from TPscrape
-    // Add and eventListener for clicks
 
-    function articleClick(evt) {
-        // Called by click on article title
-        // Input is a click event
-        // Process click on article titles
 
-        if ( evt.target.classList.contains('article')) {
-            evt.preventDefault();
-            let artIdx = evt.target.parentNode.firstChild.value;
-            console.log("Article clicked: " + arr[artIdx].title);
-            ipcRenderer.send('article-click', 'click', arr[artIdx].href);
-        }
-    }
-
-    document.addEventListener('click', articleClick);
-
-}
 
 function addArticles(arr) {
     // Called from Mainline
@@ -448,6 +578,29 @@ function addArticles(arr) {
     let iicon;
     let cb_title;
     let cb_author;
+
+    function articleListen(arr) {
+        // Called from addArticles
+        // Input is the article object passed to addArticles from TPscrape
+        // Add and eventListener for clicks
+    
+        articleClick = function(evt) {
+            // Called by click on article title
+            // Input is a click event
+            // Process click on article titles
+    
+            if ( evt.target.classList.contains('article')) {
+                evt.preventDefault();
+                let artIdx = evt.target.parentNode.firstChild.value;
+                console.log("Article clicked: " + arr[artIdx].title);
+                ipcRenderer.send('article-click', 'click', arr[artIdx].href);
+            }
+        }
+    
+        console.log("Add articleClick")
+        document.addEventListener('click', articleClick);
+    
+    }    
     
     articleListen(arr); // Add an eventListener for click on article titles
                         // Passing the article object to a function that ...
@@ -488,7 +641,7 @@ function addArticles(arr) {
 
         cb_author = document.createElement('div');
         cb_author.classList = 'text-gray author';
-        cb_author.innerText = "by " + arr[i].author;
+        cb_author.innerText = arr[i].author;
 
         lbl.appendChild(checkbox);
         lbl.appendChild(iicon);
@@ -554,7 +707,7 @@ function updateIndexHTML (dates) {
 
     // let errmsg; // Error message
     let year = dates[0].format("YYYY")
-    const tablePath = NYTRecipes_path + '/' + year + '/index.html';
+    const tablePath = NYTRecipes_path + year + '/index.html';
     const table = fs.readFileSync(tablePath, "UTF-8").toString();       // Read year page
     // const newTableHTML = fs.readFileSync(output, "UTF-8").toString();   // Read new table HTML created by this app (diagnostic)
     let tableLastIndex = table.length-1;
@@ -665,14 +818,472 @@ async function processNewDays (yyyy) {
     });    
 }
 
+function checkExisting(date) {
+    // See if table HTML for the input date already exists in
+    //  NYTRecipes_path + YYYY + '/Days/YYYY-MM-DD.txt'
+    // Input: a Moment object for the date under consideration
+    // Output: {
+    //           exists: boolean,
+    //           existingHTML: string
+    //         }
+    console.log("checkExisting entered, date: " + date.format('YYYY-MM-DD'))
+
+    let yyyy = date.format("YYYY");
+    let dashesYMD = date.format('YYYY-MM-DD');
+    let dayPath = NYTRecipes_path + yyyy + '/Days/' + dashesYMD + '.txt';
+    Log("dayPath: " + dayPath)
+    let dayExists = fs.existsSync(dayPath);
+    Log("dayExists: " + dayExists);
+    let differs;
+    let existingTableHTML = null;
+    if (dayExists) {
+        existingTableHTML = fs.readFileSync(dayPath, "UTF-8").toString()
+    }
+
+    return {
+        exists: dayExists,
+        existingHTML: existingTableHTML
+    }
+
+
+}
+
+async function dayCompare (newTable, oldTable) {
+    // Compare two collections of HTML table rows, one (new) a transformation
+    //  (by adding and deleting rows) of the other (old)
+    // Identify the rows added and the rows deleted.
+
+    const prefix = '<table>'        // prepend to newTable/oldTable
+    const suffix = '</table>'       // append to newTable/oldTable
+    const addColor = '#e7fcd7';     // light green - background color for added rows
+    const delColor = '#fce3e3';     // light red - background color for missing rows
+    let test = false
+    let debug = true;
+
+    function rowsText(rows, cheerioQuery) {
+        // Create an array of table row text
+        // Input: 1) Iterable Cheerio object of table rows
+        //        2) Cheerio query function for argument 1
+        // Output: array of table row text
+        //
+        // Extract the text from each table row's table data elements (TD), remove whitespace
+        //  and add the concatenation of the TD text to the output array
+
+        let text = [];
+        rows.each(function() {
+            // For each row,
+
+            // Get its TD elements
+            let tds = cheerioQuery('td', this);
+
+            // rowText will be a concatenation of each TD's text
+            let rowText = '';
+
+            tds.each(function() {
+                // For each TD element, 
+
+                // Get its text, remove whitespace and concatenate the result to rowText
+                rowText += cheerioQuery(this).html().replace(/\s+/g, '').replace('http:', 'https:');
+            })
+
+            // Append the row's concatenated text to the output array
+            text.push(rowText);
+        })
+
+        // return [row text, row text, ...]
+        return text;
+    }
+
+    function createButton(id, text) {
+        // Create and return a submit button
+        // Input:   element id
+        //          button value and element name
+
+        let button = document.createElement('input');
+        button.classList = "btn mr-2"; // margin-right to separate it from subsequent buttons
+        button.id = id;
+        button.type = "submit";
+        button.value = text;
+        button.name = text;
+        return button;
+    }
+
+    // Create a Cheerio query function for the old collection
+    const old$ = cheerio.load(prefix + oldTable + suffix);
+
+    // For the old collection, create an iterable Cheerio object of the table rows (oldRows)
+    // and a javascript array of Cheerio objects for each table row
+    const oldRows = old$('tr')
+    const oldRowsArray = oldRows.toArray()
+
+    // Create an array (oldRowsText) of each old table row's text
+    let oldRowsText = rowsText(oldRows, old$);
+
+    // Create a Cheerio query function for the new collection
+    const new$ = cheerio.load(prefix + newTable + suffix);
+
+    // For the new collection, create an iterable Cheerio object of the table rows (newRows)
+    // and a javascript array of Cheerio objects for each table row
+    const newRows = new$('tr')
+    const newRowsArray = newRows.toArray();
+
+    // Create an array (newRowsText) of each new table row's text
+    let newRowsText = rowsText(newRows, new$);
+
+    // Uncomment the following 3 rows to test
+    //newRowsText = ["r", "a", "b", "c", "z", "d", "e", "f", "g", "h", "w", "i", "j", "k", "l", "m", "u" ];
+    //oldRowsText = ["s", "t", "a", "c", "b", "d", "e", "f", "y", "x", "g", "h", "i", "j", "k", "v", "l", "m", "p", "q" ];
+    //test = true
+
+    // Create an array (newInNew) whose elements are the index of each 
+    //  new collection row not found in the old collection.
+    let newInNew = [];
+
+    // Compare each new row text (the elements of newRowsText) to the text of the old 
+    //  rows (elements of oldRowsText).
+    // If the new row's text is not found, add that row's index to the newInNew array
+    // Test output - newInNew array: [0,4,10,16]
+
+    for (let n = 0; n<newRowsText.length; n++ ) {
+        // For each row in the new collection...
+        let notFound = true; // Not found yet
+        for (let o = 0; o<oldRowsText.length; o++) {
+            // ... look for its text in the old collection
+            if (newRowsText[n] == oldRowsText[o]) {
+                // If found, move on to the next new row
+                notFound = false; // It has been found ...
+                break; // ... so break out of the old rows loop
+            }
+        }
+        if (notFound) {
+            // If not found, add the added row's index to the newInNew array
+            newInNew.push(n)
+        }
+    }
+
+    // Create an array (oldInNew) consisting of the index of each old row in the new row collection.
+    let oldInNew = [];
+
+    // Compare each old row text (the elements of oldRowsText) to the new rows text
+    //  (elements of newRowsText)
+    // If the old row's text is found, add its index in the new rows array to oldInNew.
+    // If the old row's text is not found, add -1 to oldInNew.
+    // Test output - oldInNew: [-1,-1,1,3,2,5,6,7,-1,-1,8,9,11,12,13,-1,14,15,-1,-1]
+
+    for (let o = 0; o<oldRowsText.length; o++ ) {
+        // For each row in the old collection...
+        let notFound = true; // Not found yet
+        for (let n = 0; n<newRowsText.length; n++) {
+            // ... look for its text in the new collection
+            if (oldRowsText[o] == newRowsText[n]) {
+                // If found, add its index in the new collection to the oldInNew array.
+                oldInNew.push(n);
+                notFound = false; // The row has been found ...
+                break; // ... so break out of the new rows loop
+            }
+        }
+        if (notFound) {
+            // If not found, indicate that by adding -1 to the oldInNew array
+            oldInNew.push(-1)
+        }
+    }
+
+    Log("oldInNew: " + oldInNew, debug)
+    Log("newInNew array: " + newInNew, debug)
+
+    // Create an array (oldInOld) consisting of the indices of rows in the oldInNew
+    //  array that don't exist in the new collection (i.e. oldInNew elements equal
+    //  to -1).
+    let oldInOld = [];
+
+    // Search backwards through the oldInNew array looking for -1 elements.
+    //
+    // The search is backwards so that the old collection rows deleted from the 
+    //  new collection can be inserted into the new collection from back to front,
+    //  obviating adjustment of the insertion point of subsequent rows.
+    // 
+    // Add the index of each -1 element to the oldInOld array
+    // Test output - oldInOld array: [19,18,15,9,8,1,0]
+
+    // Start the backwards search from this element, initially the last element
+    //  of the oldInNew array
+    let from = oldInNew.length-1;
+
+    // Index of a -1 element
+    let oldInOldIndex;
+
+    do {
+        // Starting from the last element of oldInNew, find a prior -1 element, indicating an old row
+        //  missing from the new collection
+
+        oldInOldIndex = oldInNew.lastIndexOf(-1, from) // returns -1 if not found
+        Log("oldINOld loop after lastInexOf: oldInOldIndex: " + oldInOldIndex.toString() + " from: " + from.toString(), debug)
+        if (oldInOldIndex >= 0) {
+            // If a -1 element was found, add its index to the oldInOld array
+            oldInOld.push(oldInOldIndex)
+            Log("Pushed: " + oldInOldIndex.toString(), debug)
+        }
+
+        // If a -1 element was found, start the next search from the
+        //  preceeding element; if no such element was found, 'from' is set to -2
+        //  resulting in exit from the loop
+        from = oldInOldIndex - 1
+        Log("oldINOld loop after from update: oldInOldIndex: " + oldInOldIndex.toString() + " from: " + from.toString(), debug)
+
+        // Repeat the search while 'from' is within the oldInNew array
+    } while (from >= 0)
+
+    Log("After oldInOld loop: oldInOldIndex: " + oldInOldIndex.toString(), debug)
+    Log("oldInOld array: " + oldInOld, debug)
+
+    // diffRowsHTML is only for debugging
+    let diffRowsHTML = [...newRowsText]
+
+    // For each newInNew element (an added table row in newRowsArray),
+    //  modify the table row in newRowsArray to set its background color to 'added'.
+    newInNew.forEach((el) => {
+        diffRowsHTML[el] = "+" + diffRowsHTML[el]
+        new$(newRowsArray[el]).css('background-color', addColor)
+    })
+
+    // If there are table rows in oldRowsArray not present in newRowsArray
+    //  (i.e. oldInOld not empty), duplcate newRowsArray as mergedHTML.
+    // mergedHTML will be modified in the following loop and then returned
+    //  to the caller if the Merge action is chosen.
+    if (oldInOld.length > 0) {
+        mergedHTML = [...newRowsArray]
+    }
+    // For each oldInOld element (a table row in oldRowsArray not present in
+    //  newRowsArray), copy the oldRowsArray element to the appropriate position
+    //  in mergedHTML, then modify the table row in oldRowsArray to set its
+    //  background color to 'deleted' and copy the modified oldRowsArray element
+    //  to the appropriate position in newRowsArray.
+    // The appropriate position in newRowsArray (and its duplicate mergedHTML) is 
+    //  determined by iterating backwards through the oldInNew array from the
+    //  position of the oldInOld element under consideration until a positive
+    //  oldInNew element is found. The value of this positive oldInNew element
+    //  is the position in newRowsArray of the first table row preceeding the
+    //  oldInOld element under consideration that exists in both oldRowsAray and
+    //  newRowsArray. The oldInOld element under consideration should be inserted
+    //  into newRowsArray (and its duplicate mergedHTML) after this row common
+    //  to both new and old arrays.
+    Log("oldInOld loop", debug)
+    oldInOld.forEach((el) => {
+        // For each oldInOld element (an index in the oldInNew array) ...
+        Log("el: " + el.toString(), debug)
+
+        // ... examine the oldInNew array elements preceeding that index ...
+        let prevEl = el - 1
+
+        // ... within the oldInNew array (prevEl > -1) 
+        //  until a non-negative element is found
+        while (prevEl > -1 && oldInNew[prevEl] < 0) {
+            prevEl--
+        }
+
+        if (prevEl < 0) {
+            // If a non-negative element is not found ...
+            Log("Prepend el: " + el.toString(), debug)
+            diffRowsHTML.unshift("-" + oldRowsText[el])
+
+            // Prepend the oldRowsArray element to the mergedHTML
+            mergedHTML.unshift(oldRowsArray[el]) 
+
+            // Set the row's background color to 'deleted' in oldRowsArray
+            old$(oldRowsArray[el]).css('background-color', delColor)
+
+            // Prepend the modified oldRowsArray element to the newRowsArray
+            newRowsArray.unshift(oldRowsArray[el])
+
+        } else {
+            // Otherwise, if a non-negative element (that is, a row that exists
+            //  in both oldRowsArray and newRowsArray) was found ...
+
+            // ... the place in newRowsArray to insert the 'deleted' row is 
+            //  after that common row.
+            let insertion = oldInNew[prevEl] + 1;        
+            Log("Add " + el.toString() + " at: " + insertion.toString(), debug);
+            diffRowsHTML.splice(insertion, 0, "-" + oldRowsText[el])
+
+            // Insert the oldRowsArray elment into mergedHTML
+            mergedHTML.splice(insertion, 0, oldRowsArray[el])
+
+            // Set the row's background color to 'deleted' in oldRowsArray 
+            old$(oldRowsArray[el]).css('background-color', delColor)
+
+            // Insert the modified oldRowsArray elment into the newRowsArray
+            newRowsArray.splice(insertion, 0, oldRowsArray[el])
+        }
+
+    })
+
+    Log("oldRowsText: " + oldRowsText, debug)
+    Log("newRowsText: " + newRowsText, debug)
+    Log("updated diffRowsHTML: " + diffRowsHTML, debug)
+
+    Log("Added rows: " + newInNew.length.toString(), debug)
+    Log("Deleted rows: " + oldInOld.length.toString(), debug)
+
+    // added is true if newRowsArray contains added rows
+    let added = newInNew.length > 0;
+
+    // deleted is true if oldRowsArray contains rows missing from newRowsArray
+    let deleted = oldInOld.length > 0;
+
+    if (test) {
+        return
+    } 
+
+    //if (added) {
+    //    // If there are added rows, display a button to replace the existing
+    //    //  table HTML with the new table HTML
+    //    let replaceBtn = createButton("replaceBtn", "Replace")
+    //    buttons.appendChild(replaceBtn)
+    //}
+    if (added && deleted) {
+        // If there are both added and missing rows in the new table HTML,
+        //  display a button to replace the existing table HTML with the 
+        //  union of the added and existing rows, i.e. add the added rows and
+        //  retain the missing rows
+        let mergeBtn = createButton("mergeBtn", "Merge");
+        buttons.appendChild(mergeBtn);
+    }
+    if (added || deleted) {
+        // If there are added rows or missing rows in the new table HTML,
+        //  display a button to discard the new table HTML
+        let replaceBtn = createButton("replaceBtn", "Replace")
+        buttons.appendChild(replaceBtn)
+        discardBtn = createButton("discardBtn", "Discard");
+        buttons.appendChild(discardBtn);
+        msg = "Existing table rows differ from the selected rows"
+        addMsg(mL, msg);
+    }
+
+    // Name of button clicked (action selected)
+    //  or "None" if the new and old table HTML are equivalent
+    let buttonClicked;
+
+    if (added || deleted) {
+        // If there are either added rows or missing rows in the new table HTML,
+        //  display a table identifying the added and missing rows by background
+        //  color
+
+        // Create a Cheerio query function for an empty table
+        const table$ = cheerio.load('<table><tbody></tbody></table>')
+
+        // Add table rows from newRowsArray to the empty table
+        for (a = 0; a<newRowsArray.length; a++) {
+            table$(newRowsArray[a]).appendTo('tbody')
+        }
+        Log("diff table:", debug)
+        Log(table$('table').html(), debug)
+
+        // Display the table 
+        document.getElementById("tableCompare").innerHTML = table$('table').html();
+
+        // Create an array (inps) of buttons
+        let inps = buttons.getElementsByTagName("input");    
+        Log("Number of buttons: " + inps.length.toString(), debug)
+
+        // Create an array (inpsPromises) of promises related to the clicking of
+        //  buttons (submit type input elements)
+        let inpsPromises = [];
+        for (let i=0; i<inps.length; i++) {
+            // For each button, create a Promise resolved by a 'click' event listener
+            //  and add it to the inpsPromises array.  
+            inpsPromises.push( new Promise (function(resolve) {
+                inps[i].addEventListener("click", async (e) => {
+                    // When a button is clicked, remove all buttons and the 
+                    //  table from the display.  Resolve the related promise with the name
+                    //  of the clicked button (Replace, Merge or Discard)
+                    e.preventDefault();
+                    Log("Click handler entered", debug);
+                    Log("Target: " + e.target.name, debug)
+
+                    // Remove butttons
+                    while (buttons.firstChild) {
+                        buttons.removeChild(buttons.lastChild);
+                    }
+
+                    // Remove the table
+                    //while (tableDiv.firstChild) {
+                    //    tableDiv.removeChild(tableDiv.lastChild);
+                    //}
+                    while (tableCompare.firstChild) {
+                        tableCompare.removeChild(tableCompare.lastChild);
+                    }
+
+                    // Resolve the promise related to the clicked button with the
+                    //  button's name
+                    resolve(e.target.name)
+                }, false)}
+
+            ))
+        }
+
+        // Wait for a button to be clicked
+        buttonClicked = await Promise.race(inpsPromises)
+
+    } else {
+        // If the new table HTML has neither added nor missing rows, return "None"
+        buttonClicked = "None"
+    }
+
+    Log("Button clicked: " + buttonClicked, debug)
+
+    // Return an object that specifies the action selected (Replace, Merge, Discard or
+    //  None).  In the case of Merge, the returned object also contains the merged
+    //  table HTML.
+    let returnObj;
+    if (buttonClicked == "Merge") {
+        // Create a Cheerio query function for an empty table
+        const merged$ = cheerio.load('<table><tbody></tbody></table>')
+
+        // Add table rows from mergedHTML to the empty table
+        for (a = 0; a<mergedHTML.length; a++) {
+            merged$(mergedHTML[a]).appendTo('tbody')
+        }
+
+        // Return the selected action and the merged table HTML
+        //  (The merged table HTML returned by Cheerio is modified to match the HTML
+        //   generated by this app.  A carriage return is appended to </tr> elements
+        //   and 14 spaces are prepended to <tr> elements.)
+        returnObj = {
+            action: buttonClicked,
+            mergedHTML: merged$('tbody').html().replace(/<\/tr>/g, '</tr>\r').replace(/<tr>/g, '              <tr>')
+        }
+    } else {
+        // If not Merge, return the action selected and null for the merged table HTML
+        returnObj = {
+            action: buttonClicked,
+            mergedHTML: null
+        }
+    }
+    return returnObj;
+}
+
 // Mainline function
 async function Mainline() {
     console.log("Entered Mainline, awaiting Puppeteer launch");
+
+    async function launchPup () {
+        // Launch Puppeteer and create a page
+        // Called from Mainline
+    
+        console.log("launchPup: entered");
+        browser = await puppeteer.launch();
+        page = await browser.newPage();
+        //await page.setDefaultNavigationTimeout(0);
+        page.setDefaultNavigationTimeout(0);
+        console.log("launchPup: exiting");
+    }
+    
 
     // Ask main process for app data path and app name
     let appData = await ipcRenderer.invoke('getAppData');
 
     // Construct path to last-date-processed file
+    // For macOS: /Users/rahiggins/Library/Application Support/recipe-scraper/
     const lastDateFile = appData.path + "/" + appData.name + '/LastDate.txt';
     // console.log("lastDateFile: " + lastDateFile);
 
@@ -686,13 +1297,12 @@ async function Mainline() {
     let today = new Date();
     let todayStr = today.toLocaleString('sv-SE', {timeZone: 'America/Chicago'}).substr(0,10)
 
-    // The minimum date is 2018-02-04 because the format of the Today's Paper 
-    //  article list changed on 2018-02-04 and the prior format is not
-    //  supported by this code.
+    // The minimum date is 2006-04-02 because there's no Today's Paper 
+    //  before that date
 
     // Set the minimum and maximum dates.
     let dateInput = document.getElementById('dateSpec');
-    dateInput.min = "2018-02-04"
+    dateInput.min = "2006-04-02"
     dateInput.max = todayStr;
 
     // Add EventListener for Start button
@@ -714,6 +1324,7 @@ async function Mainline() {
         if (enteredDate == "") {
             // If no date was entered, get the last processed date and 
             //  calculate the days to be processedlastDateFile
+            dateEntered = false;
             let lastDate = Moment(fs.readFileSync(lastDateFile, "utf8"), "MM-DD-YYYY");
             if (lastDate.day() == 0) {  // If last was Sunday,
                 bumps = [3, 4];         //  next is Wednesday (+3), then Sunday (+4)
@@ -733,6 +1344,7 @@ async function Mainline() {
             }
         } else {
             // Otherwise, process only the entered date
+            dateEntered = true;
             datesToProcess.push(Moment(enteredDate));
         }
 
@@ -762,43 +1374,65 @@ async function Mainline() {
 
         if (processDates) { // If there are dates to process ...
             // For each date to be processed:
+            let checkExistingResult
+            let compareResult
             let lastDateToProcess = datesToProcess.length - 1;
             for (let i = 0; i < datesToProcess.length; i++) {
+                if (datesToProcess[i] >= epochDate) {
+                    currentEpoch = true;
+                } else {
+                    currentEpoch = false;
+                }
                 MDY = datesToProcess[i].format("MM/DD/YYYY");
                 YMD = datesToProcess[i].format("YYYY/MM/DD");
                 Day = datesToProcess[i].format("dddd");
 
                 // Set Today's Paper section to be processed according to the day of week
-                switch (Day) {
-                    case "Sunday":
-                        sect = "Magazine";
-                        break;
-                    case "Wednesday":
-                        sect = "Food";
-                        break;
-                    default:
-                        sect = "";
+                //switch (Day) {
+                //    case "Sunday":
+                //        sect = "Magazine";
+                //        break;
+                //    case "Wednesday":
+                //        sect = "Food";
+                //        break;
+                //    default:
+                //        sect = "";
+                //}
+
+                if (currentEpoch) {
+                    url = `${URLStartCurrent}${YMD}${URLEndCurrent}`
+                } else {
+                    url = `${URLStartPast}${YMD}${URLEndPast}`
                 }
 
                 // Form Today's Paper URL
-                url = `${URLStart}${YMD}`;
-                if (Day == "Sunday") {
-                    url = `${url}${URLSun}`;
-                } else {
-                    url = `${url}${URLWed}`;
-                }
+                //url = `${URLStart}${YMD}`;
+                //if (Day == "Sunday") {
+                //    url = `${url}${URLSun}`;
+                //} else {
+                //    url = `${url}${URLWed}`;
+                //}
+
+                //// Create date table row - write to disk in processSelectedArticles 
+                //dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
+                //dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
+                //dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
+                //dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
+                //dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
+
+                // Call TPscrape to retrieve designated section articles
+                console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
+                console.log("sect: " + sect)
+                var artsArray = await TPscrape(url);
+                console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
+                console.log("sect: " + sect)
 
                 // Create date table row - write to disk in processSelectedArticles 
-                dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
+                dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + "#" + sect + '">';
                 dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
                 dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
                 dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
                 dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
-
-                // Call TPscrape to retrieve designated section articles
-                console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
-                var artsArray = await TPscrape(url);
-                console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
 
                 // Add designated section article checkboxes to index.html
                 addArticles(artsArray);
@@ -808,7 +1442,11 @@ async function Mainline() {
                 if (i < lastDateToProcess) {
                     buttonText = "Next";
                 } else {
-                    buttonText = "Save";
+                    if (dateEntered) {
+                        buttonText = "Continue"
+                    } else {
+                        buttonText = "Save";
+                    }
                 }
                 let sub = document.createElement('input');
                 sub.className = "btn"
@@ -821,13 +1459,60 @@ async function Mainline() {
                 await processSelectedArticles(artsArray);
                 console.log("Mainline: returned from processSelectedArticles");
 
+                // If a date was entered, see if table HTML already exists
+                if (dateEntered) {
+                    checkExistingResult = checkExisting(datesToProcess[i])
+                    if (checkExistingResult.exists) {
+                        compareResult = await dayCompare(newTableHTML, checkExistingResult.existingHTML);
+                        Log("Action returned: " + compareResult.action);
+                        Log("HTML returned: " + compareResult.mergedHTML);
+                    }
+                }
+
                 // Repeat for next date to be processed
             }
 
+            // Remove previous messages
+            //remvAllMsg(mL);
+
             // Store LastDate processed
-            remvAllMsg(mL);
             if (saveLastDate) {
                 fs.writeFileSync(lastDateFile, MDY, "utf8");
+            }
+
+            if (dateEntered && checkExistingResult.exists) {
+                console.log("Date was entered and has existing table HTML");
+                console.log("Action: " + compareResult.action);
+
+                switch (compareResult.action) {
+
+                    case 'None':
+                        msg = "An identical set of table rows already exists"
+                        addMsg(mL, msg)
+                        datesToProcessRange = [];
+                        newTableHTML = "";  // Reset newTableHTML
+                        break;
+
+                    case 'Discard':
+                        mL.removeChild(mL.lastChild);
+                        msg = "Changes discarded, existing table rows retained"
+                        addMsg(mL, msg)
+                        datesToProcessRange = [];
+                        newTableHTML = "";  // Reset newTableHTML
+                        break;
+
+                    case 'Replace':
+                        mL.removeChild(mL.lastChild);
+                        break;
+
+                    case 'Merge':
+                        mL.removeChild(mL.lastChild);
+                        newTableHTML = compareResult.mergedHTML
+
+                    default:
+                        break;
+
+                }
             }
 
             // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
@@ -856,7 +1541,7 @@ async function Mainline() {
                     Insert(mL);
 
                 } else {
-                    console.error("Mainliane: problem updating index.html")
+                    console.error("Mainline: problem updating index.html")
                     console.error("newTableHTML:");
                     console.error(newTableHTML);
                     msg = "Problem updating index.html — see console log";
