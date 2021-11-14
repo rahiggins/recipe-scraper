@@ -8,6 +8,7 @@
 
 const fs = require('fs'); // Filesystem functions
 const { ipcRenderer } = require('electron'); // InterProcess Communications
+const cheerio = require('cheerio'); // core jQuery
 
 // addMsg creates a <p> element containing message text and adds it to the msgs div
 //
@@ -71,16 +72,20 @@ function remvAllMsg(msgDiv) {
 //   characters are different.  This condition should not occur if BlueGriffon
 //   is configured not to wrap long lines.
 //
-//  Otherwise, if the two sets of table HTML differ, NewDays stores the table
-//   HTML in the Days folder as NotSame_yyyy-mm-dd.txt and in the MAMP
-//   htdocs/updates folder as yyyy-mm-dd.txt for use by the insert.php script.
+//  Otherwise, if the two sets of table HTML differ, NewDays renames the existing
+//   file in the Days folder as Old_yyyy-mm-dd.txt (replacing an existing 
+//   Old_yyyy-mm-dd.txt) and stores the new HTML in the Days folder as
+//   yyyy-mm-dd.txt and in the MAMP htdocs/updates folder as yyyy-mm-dd.txt
+//   for use by the insert.php script.
 //
+//function NewDays(yyyy, msgDiv, singleDate) {
 function NewDays(yyyy, msgDiv) {
     // Input: year (yyyy) of dates being processed
     // Returns true if there are inserts or updates to be processed, false otherwise
     // Segment the year's table HTML (~/Sites/NYT Recipes/yyyy/index.html) by day
     // Determine if each day's segment is new or if it's an update
 
+    //console.log("NewDays entered with " + yyyy + " singleDate: " + singleDate);
     console.log("NewDays entered with " + yyyy);
 
     function back2NL(idx) {
@@ -148,6 +153,51 @@ function NewDays(yyyy, msgDiv) {
         }
         // console.log(gotContent)
         return gotContent;
+    }
+
+    function distill (markup) {
+        // Distill table HTML into an array of text strings
+
+        // Input: table HTML, i.e. <tr> and <td> elements
+        // Output: [string, string, …] where string is the concatenated text of the <td> elements
+        //          belonging to a <tr> element, stripped of whitespace and 
+        //          with 'http:' replaced with 'https:'
+
+        const prefix = '<table>'        // prepend to markup
+        const suffix = '</table>'       // append to markup
+
+        // Create a Cheerio query function based on the input table HTML
+        let $ = cheerio.load(prefix + markup + suffix);
+
+        // Get a Cheerio array of table rows
+        const rows = $('tr');
+
+        // Initialize output array
+        let text = [];
+
+        rows.each(function() {
+            // For each row,
+
+            // Get its <td> elements
+            let tds = $('td', this);
+
+            // rowText will be a concatenation of each <td> element's text
+            let rowText = '';
+
+            tds.each(function() {
+                // For each <td> element, 
+
+                // Get its text, remove whitespace, replace 'http' and concatenate 
+                //  the result to rowText
+                rowText += $(this).html().replace(/\s+/g, '').replace('http:', 'https:');
+            })
+
+            // Append the row's concatenated text to the output array
+            text.push(rowText);
+        })
+
+        // return [row text, row text, ...]s
+        return text;
     }
     
     // Read the year's table HTML
@@ -220,34 +270,52 @@ function NewDays(yyyy, msgDiv) {
             keys = dates[i].split("/"); // Split date into [mm, dd, yyyy]
             var file_name = keys[2] + "-" + keys[0] + "-" + keys[1] + ".txt";
             if (fs.existsSync(Days_path + file_name)) {
+                // The day's table HTML already exists in the Days folder
                 // console.log(file_name + " exists");
                 const existing = fs.readFileSync(Days_path + file_name, "UTF-8").toString();
                 if (existing == day_markup) {
-                    // console.log("Both " + file_name + " are the same");
-                } else { // Used to have a problem with BlueGriffon changing newline codes. This probably isn't needed any more
-                    var diff = false;
-                    if (existing.length == day_markup.length) {
-                        var scanLength = day_markup.length;
-                        var misMatch = false;
-                        for (var j = 0; j < scanLength; j++) {
-                            if (existing[j] !== day_markup[j]) {
-                                if (newLineChars.includes(existing[j]) && newLineChars.includes(day_markup[j])) {
-                                    console.log("Newline mismatch at " + j.toString() + " for " + file_name);
-                                    misMatch = true;                                
-                                } else {
-                                    diff = true;
-                                    break;
-                                }
-                            } 
-                        }
-                        if (misMatch) {
-                            fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
-                            console.log(file_name + " replaced in Days");
-                        }
-                    } else {
-                        diff = true;
+                    // The previously stored table HTML is identical to the generated table HTML
+                    console.log("Both " + file_name + " are the same");
+                } else {
+                    // The previously stored table HTML differs from the generated table HTML.
+                    //  See if the difference is only in whitespace or 'http' instead of 'https'.
+                    //  Try both a fancy 'distill' comparison and a simple replacement comparison
+                    console.log("Both " + file_name + " are not the same");
+                    var diff = true;
+                    if (JSON.stringify(distill(existing)) === JSON.stringify(distill(day_markup))) {
+                        console.log("Distilled " + file_name + " are equal")
+                        var diff = false;
                     }
+                    if (existing.replace(/\s+/g, '').replace('http:', 'https:') == day_markup.replace(/\s+/g, '').replace('http:', 'https:')) {
+                        console.log("Simple whitespace stripped " + file_name + " are equal")
+                        var diff = false;
+                    }
+                    // Used to have a problem with BlueGriffon changing newline codes. This probably isn't needed any more
+                    // var diff = false;
+                    // if (existing.length == day_markup.length) {
+                    //     var scanLength = day_markup.length;
+                    //     var misMatch = false;
+                    //     for (var j = 0; j < scanLength; j++) {                            
+                    //         if (existing[j] !== day_markup[j]) {
+                    //             if (newLineChars.includes(existing[j]) && newLineChars.includes(day_markup[j])) {
+                    //                 console.log("Newline mismatch at " + j.toString() + " for " + file_name);
+                    //                 misMatch = true;                                
+                    //             } else {
+                    //                 diff = true;
+                    //                 break;
+                    //             }
+                    //         } 
+                    //     }
+                    //     if (misMatch) {
+                    //         fs.writeFileSync(Days_path + file_name, day_markup, "utf8");
+                    //         console.log(file_name + " replaced in Days");
+                    //     }
+                    // } else {
+                    //     diff = true;
+                    // }
+                    
                     if (diff) {
+                        console.log(file_name + " differs, added to updates")
 
                         // Existing day file has changed
                         addMsg(msgDiv, file_name + " differs, added to updates", {indent: true});
