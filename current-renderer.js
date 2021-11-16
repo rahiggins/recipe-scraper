@@ -188,6 +188,9 @@ async function TPscrape(url) {
     
     
         function getTitle($) {
+            // Get a article's title and attibutes: 
+            //  - article designation (arttype)
+            //  - existence of wine pairing advice (ATD_present)
             // Called from artScrape
             // Input is a Cheerio object containing article page HTML
             // Sets variables h2s, ATD_present, arttype, title
@@ -207,17 +210,59 @@ async function TPscrape(url) {
             //console.log("h2s: " + h2s.length.toString());
             //console.log("h2 w/a: " + h2a.length.toString());
     
-            // Check for title decoration (e.g. "Eat", "A Good Appetite", "Wines of the Times", "Spirits of the Times", "Ales of the Times")
-            //  and adjust "article" designation (table column 2)
-            arttype = "article";
-            let articleTypes = ['eat', 'a good appetite', 'city kitchen', 'cookbooks', 'recipe lab', 'restaurant takeaway', 'recipes for health']
-            console.log("xOfTimes(.e6idgb70): " + $(".e6idgb70").length.toString());
+            // Check for title decoration (a <p> element of class e6idgb70)
+            //  and adjust the article designation (table column 2)
+            // The article designation is 'article', unless the title decoration
+            //  is 'x of the times', in which case the article designation is 'x'
+            //  or the title decoration is a key of the object articleTypes, in
+            //  which case the article designation is the value associated with
+            //  that key.
+
+            function articleType(key) {
+                // Map title decorations (key) to an article designation
+
+                // Define title decorations that have an article designation
+                //  other than 'article'
+                let articleTypes = {
+                    pairings: 'pairings',
+                    'the pour': 'wine',
+                    'wine school': 'wine school'
+                };
+
+                // Return 'article' for any title decoration not defined 
+                //  in articleType, else return key value
+                switch (articleTypes[key]) {
+                    case undefined:
+                        return 'article'
+                    default:
+                        return articleTypes[key]
+                }
+            }
+
+            // The default article designation is 'article'
+            arttype = 'article';
+
+            // Title decorations are contained in a <p> element of class e6idgb70.
+            // See if a title decoration is present, and if so, see if it 
+            //  modifies the default article designation
+            console.log("Number of class e6idgb70 elements: " + $(".e6idgb70").length.toString());
             $(".e6idgb70").each(function() {
                 if ($(this).text().length > 0) {
-                    console.log("e6idgb70 text: " + $(this).text());
-                    arttype = $(this).text().split(/ OF THE TIMES/i)[0].toLowerCase();
-                    if (articleTypes.includes(arttype.trim())) {arttype = "article"}
-                    if (arttype.trim() == "wines") {arttype = "wine"}
+                    // The class e6idgb70 elements has text and so is title decoration
+                    let key = $(this).text().toLowerCase()
+                    console.log("e6idgb70 text (title decoration): " + key);
+
+                    if (key.includes('of the times')) {
+                        // The title decoration contains 'of the times' so the preceding word
+                        //  is the article designation
+                        arttype = key.split(/ of the times/)[0];
+                        if (arttype.trim() == "wines") {arttype = "wine"}
+                        if (arttype.trim() == "beers") {arttype = "beer"}
+                    } else {
+                        // Otherwise, call articleType to get the article designation
+                        arttype = articleType(key);
+                        console.log('articleType returned: ' + arttype)
+                    }
                 }
             })
     
@@ -246,11 +291,11 @@ async function TPscrape(url) {
             //  Create recipe objects {name: , link:} from <a> elements 
             //  and push onto recipeList array
             //
-            // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:" (5/23/2021)
+            // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021)
             $("p.evys1bk0").each(function() {
                 let p_text = $(this).text();
                 // console.log("p.evys1bk0 loop - <p> text: " + p_text)
-                if (p_text.match(/Recipe[s]?:|Pairings:|Eat:/) != null) {
+                if (p_text.match(/Recipe[s]?:|Pairing[s]?:|Eat:/) != null) {
                     recipes = true;
                     console.log("Recipes found - " + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:"');
                     $("a", $(this)).each(function() {
@@ -853,6 +898,8 @@ async function dayCompare (newTable, oldTable) {
     //  (by adding and deleting rows) of the other (old)
     // Identify the rows added and the rows deleted.
 
+    Log("function dayCompare entered")
+
     const prefix = '<table>'        // prepend to newTable/oldTable
     const suffix = '</table>'       // append to newTable/oldTable
     const addColor = '#e7fcd7';     // light green - background color for added rows
@@ -882,8 +929,10 @@ async function dayCompare (newTable, oldTable) {
             tds.each(function() {
                 // For each TD element, 
 
-                // Get its text, remove whitespace and concatenate the result to rowText
-                rowText += cheerioQuery(this).html().replace(/\s+/g, '').replace('http:', 'https:');
+                // Get its text, remove whitespace and <br> elements, 
+                //  replace 'http' with 'https', and concatenate the result 
+                //  to rowText
+                rowText += cheerioQuery(this).html().replace(/\s+|<br>/g, '').replace('http:', 'https:');
             })
 
             // Append the row's concatenated text to the output array

@@ -1,3 +1,11 @@
+10/15/2021
+    In current-renderer.js, function getTitle:
+        - Change handling of title decoration
+        - Accecpt 'Pairing:' or 'Pairings:' as an indicator or recipe links
+    In current-renderer.js, function dayCompare:
+        - When comparing row text, remove <br> elements in addition to whitespace
+    
+
 10/13/2021
     Merge Epochs branch to master
 
