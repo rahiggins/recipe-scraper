@@ -194,7 +194,7 @@ async function TPscrape(url) {
     
             // See if And to Drink is present
             ATD_present = "";
-            h2s = $('h2.eoo0vm40'); // h2s also referenced in recipes()
+            h2s = $('h2.eoo0vm40'); // h2s also referenced in getRecipes()
             $(h2s).each(function() {
                 if ($(this).text().includes("And to Drink")) {
                     ATD_present = " *";
