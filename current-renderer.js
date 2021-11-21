@@ -10,6 +10,10 @@
 //  their inception on 4/2/2006 by catering to the Today's Paper page format
 //  change on 12/24/2017.
 
+// Epochs version 0.2
+//  The ThirdEpoch branch of recipe-scraper supports the Today's Paper page
+//  format prior to 10/27/2010.
+
 // Code structure:
 //
 //  Global variable definitions
@@ -97,10 +101,15 @@ const aL = document.getElementById('aL');       // article list div
 const mL = document.getElementById('msgs');     // messages list div
 const buttons = document.getElementById('buttons');     // tableCompare buttons div
 const tableDiv = document.getElementById('tableDiv');   // tableCompare table div
-const epochDate = Moment("2017-12-24")          // first date for current TP format
-const anotherEpochDate = Moment('2010-10-27');  // first date for columnGroup TP format
-var currentEpoch;                               // boolean
-var dateEntered;                                // boolean
+var dateEntered;                                  // boolean
+
+// Epochs is an array of dates when the Today's Paper format changed
+const Epochs = [Moment('2006-04-02'), // Today's Paper begins with class story divs
+                Moment('2010-10-27'), // change to columnGroups 
+                Moment('2017-12-24'), // change to <ol>
+                Moment() + Moment.duration(1, 'days')]; // tomorrow
+
+const maxEpoch = Epochs.length - 1; // Epochs greater than this are in the future, S.N.O.
 
 // Function definitions
 
@@ -111,36 +120,6 @@ function Log (text) {
     }
 }
 
-
-// function addMsg(m, opt) {
-//     // Add a message to the #msgs div
-//     // If opt { indent: true }, add padding-left to message
-//     // Called throughout
-// 
-//     if (typeof opt === 'undefined') {
-//         opt = {
-//             indent: false
-//         };
-//     }
-//     let para = document.createElement("p");
-//     if (opt.indent) {
-//         para.className = "pl-2";
-//     }
-//     let txnd = document.createTextNode(m);
-//     para.appendChild(txnd);
-//     mL.appendChild(para);
-//     return;
-// }
-// 
-// function remvAllMsg() {
-//     // Remove all messages in the #msgs div
-//     // Called throughout
-// 
-//     while (mL.firstChild) {
-//         mL.removeChild(mL.lastChild);
-//     }
-// }
-
 function createButton(id, text) {
     let button = document.createElement('input');
     button.className = "btn";
@@ -150,9 +129,11 @@ function createButton(id, text) {
     return button
 }
 
-async function TPscrape(url) {
+async function TPscrape(url, epoch) {
     // Called from Mainline
-    // Input is URL of Today's Paper section
+    // Input is URL of Today's Paper section and
+    //          Today's Paper format epoch indicator (1, 2 or 3)
+    //
     // Retrieve Today's Paper page
     // Call sectionScrape to extract articles from Todays Paper section {Wednesday: food, Sunday: magazine}
     // For each article, call artScrape to scrape article for title and recipes
@@ -281,8 +262,8 @@ async function TPscrape(url) {
     
         function getRecipes($) {
             // Called from artScrape
-            // Input is a Cheerio object containing article page HTML
-            // Creates recipeList array [{name:, link:} ...]
+            // Input is a Cheerio query function for the article page HTML
+            // Returns recipeList array [{name:, link:} ...]
             Log("getRecipes entered")
     
             let recipes = false;
@@ -428,6 +409,8 @@ async function TPscrape(url) {
     async function sectionScrape($) {
         // Called from TPscrape
         // Input is a Cheerio object containing Today's Paper page HTML
+        //
+        // Find the section that contains food articles, then ...
         // For each article in the designated section:
         //  Create an article object {title:, author:, href:}
         //  Call artScrape to get { hasRecipes:, html:}
@@ -435,8 +418,8 @@ async function TPscrape(url) {
         //  Push article object onto array of article objects
         // Return array of article objects [{title:, author:, href:, hasRecipes:, html: } ...]
 
-        console.log("Entering sectionScrape");
-        console.log("currentEpoch: " + currentEpoch)
+        Log("Entering sectionScrape");
+        Log("Epoch: " + epoch.toString())
 
         function addProgress(now,max) {
             // Called from sectionScrape
@@ -453,15 +436,14 @@ async function TPscrape(url) {
             return prog;
         }
         
-        let articles = [];  // Array of article objects
+        let articles = [];  // Array of article objects, value returned by sectionScrape
+        let sh; // div.section-headline element in epoch 1
 
-        // Locate the target section (anch[1])
-        //let an = $("a").filter(function() {
-        //    return $(this).attr("name") == anch[1];
-        //})
-        //console.log("Number of anchors: " + an.length.toString());
+        // Define names of sections that contain food articles
+        let sectionNames = ["magazine", "food", "dining", "diningin,diningout"];
 
-        let sectionNames = ["magazine", "food", "dining", "diningin,diningout"]
+        // Find an <a> element whose name belongs to the sectionNames array of
+        //  sections containing food articles
         let an = $("a").filter(function() {
             let name = $(this).attr("name");
             if (name == undefined) {
@@ -471,27 +453,55 @@ async function TPscrape(url) {
             }
         })
 
+        if (epoch == 1) {
+            // For the first epoch, find the <a> element's parent whose 
+            //  class name is "section-headline"
+            sh = $(an).parents().filter(function() {
+                return $(this).attr("class") == "section-headline";
+            })            
+        }
+
         //console.log("Number of anchors: " + an.length.toString())
-        console.log("Section name: " + $(an).attr("name"))
-        sect = $(an).attr("name")
 
+        // Set section name from the identified <a> element
+        sect = $(an).attr("name");
+        Log("Section name: " + sect)
+
+        // Cheerio object containing article elements, set in the following
+        //  switch block
         let arts;
-        if (currentEpoch) {
+
+        switch (epoch) {
+
+            case 3:
         
-            // 
-            let sectionList = $(an).siblings('ol'); // ordered list following section
-            Log("Number of lists: " + sectionList.length.toString());
-            arts = $(sectionList).children("li"); // list items (articles) of ordered list following section
-            //console.log("Number of articles: " + arts.length.toString());
+                // 
+                let sectionList = $(an).siblings('ol'); // ordered list following section
+                Log("Number of lists: " + sectionList.length.toString());
+                arts = $(sectionList).children("li"); // list items (articles) of ordered list following section
+                //console.log("Number of articles: " + arts.length.toString());
+                break;
+            
+            case 2:
 
-        } else {
+                let colGroupParent = $(an).parents().filter(function() {
+                    return $(this).attr("class") == "columnGroup";
+                })
+                Log("colGroupParent length: " + colGroupParent.length.toString());
+            
+                arts = $('li', colGroupParent);
+                break;
 
-            let colGroupParent = $(an).parents().filter(function() {
-                return $(this).attr("class") == "columnGroup";
-            })
-            Log("colGroupParent length: " + colGroupParent.length.toString());
+            case 1:
 
-            arts = $('li', colGroupParent);
+                let sib = $(sh).next()
+                do {
+                    arts = $(arts).add(sib)
+                    console.log("Sib: " + $('a', sib).text())
+                    sib = $(sib).next()
+                } while ($(sib).attr('class') != 'jumptonavbox')
+                break;
+                
         }
         Log("Number of articles: " + arts.length.toString());
 
@@ -516,57 +526,91 @@ async function TPscrape(url) {
 
 
         for (let a = 0; a < arts.length; a++) {  
-            // for each article, collect title, author and link href
-            let artObj;
+            // For each article, create an article object (artObj) 
+
+            let artObj; // Article object, appended to articles array
             let title;
             let author;
-            let link = $(arts[a]).find("a");
+            let link = $(arts[a]).find("a");    // Hyperlink to article
 
-            if (currentEpoch) {
-                let h2 = $(link).find("h2");
-                Log("Article title: " + $(h2).text());
-                Log("Article href: " + prot + "://" + hostnm + $(link).attr("href"));
-                author = $(arts[a]).find("span.css-1n7hynb")
-                Log("Author: " + author.text());
-                artObj = {  // create an article object
-                    title: $(h2).text(),
-                    author: $(author).text(),
-                    href: prot + "//" + hostnm + $(link).attr("href")
-                };
-            } else {
-                title = $(link).text().trim();
-                Log("Title: " + title);
-                let href = $(link).attr("href")
-                if (!$(link).attr("href").startsWith("http")) {
-                    href = prot + "://" + hostnm + $(link).attr("href")
-                }
-                href = href.split('?')[0]
-                Log("href: " + href);
-                let byLine = $(arts[a]).find("div.byline")
-                if (byLine.length > 0) {
-                    author = $(arts[a]).find("div.byline").text().split(/By|by/)[1].trim()
-                } else {
-                    author = "";
-                }
-                Log("Author: " + author);
-                artObj = {  // create an article object
-                    title: title,
-                    author: author,
-                    href: href
-                };
+            // According to epoch, collect title, href and author. Create artObj.
+            switch (epoch) {
+    
+                case 3:
+                    let h2 = $(link).find("h2");
+                    Log("Article title: " + $(h2).text());
+                    Log("Article href: " + prot + "://" + hostnm + $(link).attr("href"));
+                    author = $(arts[a]).find("span.css-1n7hynb")
+                    Log("Author: " + author.text());
+                    artObj = {  // create an article object
+                        title: $(h2).text(),
+                        author: $(author).text(),
+                        href: prot + "//" + hostnm + $(link).attr("href")
+                    };
+                    break;
+
+                case 2:
+                    title = $(link).text().trim();
+                    Log("Title: " + title);
+                    href = $(link).attr("href")
+                    if (!$(link).attr("href").startsWith("http")) {
+                        href = prot + "://" + hostnm + $(link).attr("href")
+                    }
+                    href = href.split('?')[0]
+                    Log("href: " + href);
+                    let byLine = $(arts[a]).find("div.byline")
+                    if (byLine.length > 0) {
+                        author = $(arts[a]).find("div.byline").text().split(/By|by/)[1].trim()
+                    } else {
+                        author = "";
+                    }
+                    Log("Author: " + author);
+                    artObj = {  // create an article object
+                        title: title,
+                        author: author,
+                        href: href
+                    };
+                    break;
+
+                case 1:
+                    title = $(link).text();
+                    Log("Title: " + title)
+                    href = $(link).attr("href").replace('events', 'www')
+                    console.log("Href: " + href)
+                    let shlAuthor = $(arts[a]).find("div.storyheadline-author")
+                    if (shlAuthor.length > 0 & $(shlAuthor).text().match(/by/i) != null) {
+                        author = $(shlAuthor).text().split(/By|by/)[1].trim()
+                    } else {
+                        author = "";
+                    }
+                    Log("Author: " + author);
+                    artObj = {  // create an article object
+                        title: title,
+                        author: author,
+                        href: href
+                    };
+                    break;
             }
 
+            // Call function artScrape to scrape article page for recipes
             let aTH = await artScrape(artObj.href);
+
+            // Add values returned by artScrape to the article object (artObj)
             artObj.hasRecipes = aTH.hasRecipes;
             artObj.html = aTH.html;
             //console.log("sectionScrape: artObj: " + JSON.stringify(artObj));
+
+            // Append this article's artObj to the array returned
             articles.push(artObj);
+
+            // Update progress bar
             sectArtDiv.removeChild(sectArtDiv.lastChild);           // Remove the progress bar
             sectArtDiv.appendChild(addProgress(a+1,arts.length));   // and add an updated one
 
         }
         //console.log(articles);
-        // return array of article objects
+
+        // Return array of article objects
         mL.removeChild(mL.lastChild);   // Remove sectArtDiv 
         console.log("Exiting sectionScrape");
         return articles;
@@ -1422,57 +1466,55 @@ async function Mainline() {
         addMsg(mL, msg);
 
         if (processDates) { // If there are dates to process ...
-            // For each date to be processed:
-            let checkExistingResult
-            let compareResult
+            let checkExistingResult;
+            let compareResult;
             let lastDateToProcess = datesToProcess.length - 1;
             for (let i = 0; i < datesToProcess.length; i++) {
-                if (datesToProcess[i] >= epochDate) {
-                    currentEpoch = true;
-                } else {
-                    currentEpoch = false;
+                // For each date to be processed:
+                
+                // Establish Today's Paper format epoch: 1, 2 or 3, where 3 is the current epoch
+                let epoch = 0;  // Set epoch indicator
+                for (el of Epochs) {
+                    // For each element of the Epochs array (an epoch begin date) ...
+                
+                    if (datesToProcess[i] < el) {
+                        // If the date to process is prior to this begin date,
+                        //  exit loop
+                        break;
+                    } else {
+                        // Increment epoch indicator and repeat
+                        epoch++;
+                    }
                 }
+
+                if (epoch == 0 | epoch > maxEpoch) {
+                    console.log("Date out of Today's Paper range")
+                    return
+                } else {
+                    console.log("Epoch " + epoch.toString())
+                }
+
                 MDY = datesToProcess[i].format("MM/DD/YYYY");
                 YMD = datesToProcess[i].format("YYYY/MM/DD");
                 Day = datesToProcess[i].format("dddd");
 
-                // Set Today's Paper section to be processed according to the day of week
-                //switch (Day) {
-                //    case "Sunday":
-                //        sect = "Magazine";
-                //        break;
-                //    case "Wednesday":
-                //        sect = "Food";
-                //        break;
-                //    default:
-                //        sect = "";
-                //}
+                // Set Today's Paper URL according to epoch
+                switch (epoch == 3) {
 
-                if (currentEpoch) {
-                    url = `${URLStartCurrent}${YMD}${URLEndCurrent}`
-                } else {
-                    url = `${URLStartPast}${YMD}${URLEndPast}`
+                    case true:  // Current epoch
+                        url = `${URLStartCurrent}${YMD}${URLEndCurrent}`;
+                        break;
+
+                    case false: // Prior epochs
+                        url = `${URLStartPast}${YMD}${URLEndPast}`
+                        break;
+
                 }
-
-                // Form Today's Paper URL
-                //url = `${URLStart}${YMD}`;
-                //if (Day == "Sunday") {
-                //    url = `${url}${URLSun}`;
-                //} else {
-                //    url = `${url}${URLWed}`;
-                //}
-
-                //// Create date table row - write to disk in processSelectedArticles 
-                //dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '">';
-                //dateRowHTML = dateRowHTML + MDY + "</a></td>\n";
-                //dateRowHTML = dateRowHTML + '                <td class="type"><br>\n';
-                //dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n';
-                //dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n';
 
                 // Call TPscrape to retrieve designated section articles
                 console.log("Mainline: awaiting TPscrape for " + i.toString() + " " + url);
                 console.log("sect: " + sect)
-                var artsArray = await TPscrape(url);
+                var artsArray = await TPscrape(url, epoch);
                 console.log("Mainline: returned from TPscrape for " + i.toString() + " calling addArticles");
                 console.log("sect: " + sect)
 
