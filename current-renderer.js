@@ -294,11 +294,16 @@ async function TPscrape(url, epoch) {
 
                 // What won't they think of next - 5 Standout Recipes From Julia Reed 9/2/2020
                 // Standalone <p> elements consisting solely of a link to a recipe
+                // Sometimes a duplicate link in a collection of recipes, with
+                //  the text "View the full recipe." - 20 Easy Salads for Hot Summer Days 7/20/2022
+                //  Ignore these.
                 let paraanch = $("a",this);
                 if (paraanch.length == 1 && 
                     paraanch.text() == $(this).text() && 
+                    paraanch.text() != "View the full recipe." &&
                     paraanch.attr("href").includes("cooking.nytimes.com")) {
                     recipes = true;     // Recipes were found
+                    console.log("Recipes found -  standalone <p> element")
                     let recipe = {
                         name: paraanch.text(),
                         link: paraanch.attr("href")
