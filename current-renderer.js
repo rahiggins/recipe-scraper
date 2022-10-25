@@ -276,9 +276,9 @@ async function TPscrape(url, epoch) {
             $("p.evys1bk0").each(function() {
                 let p_text = $(this).text();
                 // console.log("p.evys1bk0 loop - <p> text: " + p_text)
-                if (p_text.match(/Recipe[s]?:|Pairing[s]?:|Eat:/) != null) {
+                if (p_text.match(/Recipe[s]?:|Pairing[s]?:|Eat:|Related:/) != null) {
                     recipes = true;
-                    console.log("Recipes found - " + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:"');
+                    console.log("Recipes found - " + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"');
                     $("a", $(this)).each(function() {
                         let name = $(this).text().trim();
                         if (name != "") { // 4/23/2014 - duplicate <a> elements, 2nd with no text
@@ -340,10 +340,30 @@ async function TPscrape(url, epoch) {
                 }
             })
 
-            // Look for h3 elements that contain links and whose text includes 'Recipe[s]:'
+            // Look for h3 elements that contain links and whose href includes 'cooking.nytimes.com'
             //  2/14/2021 Rediscovering Russian Salad
+            //  10/12/2022 Boneless Chicken Thighs Are the Star of These Easy Dinners
             $("h3").has("a").each(function () {
-                if ($(this).text().search(/Recipe(s*):/) >= 0 ) {
+                //if ($(this).text().search(/Recipe(s*):/) >= 0 ) {
+                //    console.log("H3 recipes found");
+                //    recipes = true;
+                //    $('a',this).each(function () {
+                //        console.log("Title: " + $(this).text());
+                //        console.log("Link: " + $(this).attr("href"));
+                //        let recipe = {
+                //            name: $(this).text(),
+                //            link: $(this).attr('href')
+                //        }
+//
+                //        // Check for duplicate recipe link before adding recipe to recipeList
+                //        let dup = recipeList.filter(item => (item.link == recipe.link));
+                //        if (dup.length == 0) {
+                //            console.log(recipe);
+                //            recipeList.push(recipe)
+                //        }
+                //    });
+                //}
+                if ($("a", this).attr("href").includes("cooking.nytimes.com") ) {
                     console.log("H3 recipes found");
                     recipes = true;
                     $('a',this).each(function () {
@@ -1375,7 +1395,6 @@ async function Mainline() {
         page.setDefaultNavigationTimeout(0);
         console.log("launchPup: exiting");
     }
-    
 
     // Ask main process for app data path and app name
     let appData = await ipcRenderer.invoke('getAppData');
