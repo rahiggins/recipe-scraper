@@ -340,30 +340,12 @@ async function TPscrape(url, epoch) {
                 }
             })
 
-            // Look for h3 elements that contain links and whose href includes 'cooking.nytimes.com'
+            // Look for h3 elements that contain links and whose href includes 'cooking.nytimes.com/recipes'
             //  2/14/2021 Rediscovering Russian Salad
             //  10/12/2022 Boneless Chicken Thighs Are the Star of These Easy Dinners
+            //  11/16/2022 include 'cooking.nytimes.com/recipes' to exclude 'cooking.nytimes.com/thanksgiving'
             $("h3").has("a").each(function () {
-                //if ($(this).text().search(/Recipe(s*):/) >= 0 ) {
-                //    console.log("H3 recipes found");
-                //    recipes = true;
-                //    $('a',this).each(function () {
-                //        console.log("Title: " + $(this).text());
-                //        console.log("Link: " + $(this).attr("href"));
-                //        let recipe = {
-                //            name: $(this).text(),
-                //            link: $(this).attr('href')
-                //        }
-//
-                //        // Check for duplicate recipe link before adding recipe to recipeList
-                //        let dup = recipeList.filter(item => (item.link == recipe.link));
-                //        if (dup.length == 0) {
-                //            console.log(recipe);
-                //            recipeList.push(recipe)
-                //        }
-                //    });
-                //}
-                if ($("a", this).attr("href").includes("cooking.nytimes.com") ) {
+                if ($("a", this).attr("href").includes("cooking.nytimes.com/recipes") ) {
                     console.log("H3 recipes found");
                     recipes = true;
                     $('a',this).each(function () {
