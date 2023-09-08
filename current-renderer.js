@@ -321,22 +321,24 @@ async function TPscrape(url, epoch) {
             
             // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com
             //  8/14/2020 A Summer Lunch That Feels Like a Splurge
+            //  8/30/2023 Claire Saffitz’s Foolproof Recipe for Making Macarons (multiple <a> elements)
             $(h2s).has("a").each(function () {
-                let artHref =  $("a", this).attr("href")
-                if (artHref.includes("cooking.nytimes.com")) {
+                if ($("a", this).attr("href").includes("cooking.nytimes.com/recipes") ) {
                     console.log("Alternate recipes found - H2 elements");
                     recipes = true;
-                    let recipe = {
-                        name: $("a", this).text(),
-                        link: artHref
-                    }
+                    $('a',this).each(function () {
+                        let recipe = {
+                            name: $(this).text(),
+                            link: $(this).attr('href')
+                        }
 
-                    // Check for duplicate recipe link before adding recipe to recipeList
-                    let dup = recipeList.filter(item => (item.link == recipe.link));
-                    if (dup.length == 0) {
-                        // console.log(recipe);
-                        recipeList.push(recipe)
-                    }
+                        // Check for duplicate recipe link before adding recipe to recipeList
+                        let dup = recipeList.filter(item => (item.link == recipe.link));
+                        if (dup.length == 0) {
+                            // console.log(recipe);
+                            recipeList.push(recipe)
+                        }
+                        });
                 }
             })
 
