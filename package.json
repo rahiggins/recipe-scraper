@@ -10,23 +10,17 @@
   "license": "ISC",
   "dependencies": {
     "bufferutil": "^4.0.1",
-    "cheerio": "^1.0.0-rc.3",
-    "electron": "^11.2.1",
+    "cheerio": "^1.0.0-rc.12",
+    "electron": "^26.2.2",
     "moment": "^2.25.3",
-    "needle": "^2.5.0",
+    "needle": "^3.2.0",
     "newdays": "file:../newdays",
-    "puppeteer": "^3.0.3",
+    "puppeteer": "^21.3.4",
     "request": "^2.88.2",
-    "spectre.css": "^0.5.8",
-    "utf-8-validate": "^5.0.2"
+    "spectre.css": "^0.5.9",
+    "utf-8-validate": "^6.0.3"
   },
   "devDependencies": {
-    "eslint": "^7.8.1",
-    "eslint-config-airbnb-base": "^14.2.0",
-    "eslint-config-standard": "^14.1.1",
-    "eslint-plugin-import": "^2.22.0",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^4.2.1",
-    "eslint-plugin-standard": "^4.0.1"
+    "standard": "^17.1.0"
   }
 }

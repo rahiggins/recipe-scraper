@@ -1,3 +1,11 @@
+10/26/2023
+    - Node Intregration disabled and Context Isolation enabled in all renderers.
+    - Javascript Standard Style enforced.
+
+9/7/2023
+    In current-renderer.js, function getTitle:
+        - Handle multiple <a> elements (recipes) within an <h2> element. 
+
 10/15/2021
     In current-renderer.js, function getTitle:
         - Change handling of title decoration
