@@ -1,89 +1,126 @@
-// This file is required by the past.html file and will
+// This file is invoked by the past.html file and will
 // be executed in the renderer process for that window.
-// All of the Node.js APIs are available in this process.
+
+// Context-isolation version 1.0
 
 // Code structure:
 //
-//   Mainline
-//    EventListener handler for yearInput change, keyup and paste events
-//      Enable Start button if yearInput is valid
-//    EventListener handler for Start button
-//      Call NewDays
-//      Call Insert
+//  Global variable definitions
+//  Global function definitions
+//    function addMsg
+//    function remvAllMsg
+//    function chkEnable
+//  window.scraper.onDisplayMsg
+//    calls addMsg
+//  window.scraper.onRemoveMsgs
+//    calls remvAllMsg
+//  window.scraper.onChangeStartButton
+//  'yearSpec' EventListener for 'change', 'keyup', 'paste'
+//    calls chkEnable
+//  'yearButton' EventListener for 'click'
+//    calls addMsg
+//    calls remvAllMsg
+//    Sends a 'process-year' message to past.js
 
-console.log("past-renderder: Entered Mainline");
+console.log('past-renderder entered')
 
-// Filesystem functions
-const fs = require('fs'); // Filesystem functions
+const yearInput = document.getElementById('yearSpec') // Year input field
+const startButton = document.getElementById('yearButton') // Start button
+const mL = document.getElementById('msgs') // Messages div
 
-// Functions shared with current-renderer.js
-const { addMsg, remvAllMsg, NewDays, Insert } = require('./lib.js');
+// addMsg creates a <p> element containing message text and adds it to the msgs div
+function addMsg (msgDiv, msg, opt) {
+  // Add a message to the #msgs div
+  // If opt { indent: true }, add padding-left to message
+  // Called throughout
 
-// Year input field
-const yearInput = document.getElementById('yearSpec');
-
-// Start button
-const startButton = document.getElementById('yearButton');
-
-// Messages div
-const mL = document.getElementById('msgs');     // messages list div
-
-// Functions
-
-function chkEnable(e) {
-    // If year input field is valid, enable the Start button
-
-    console.log("chkEnable entered, type: " + e.type);
-    if (e.type == 'paste') {
-        // Paste events are fired before the clipboard data is posted to the document,
-        //  so checkValidity cannot be used.  The clipboard data must be retrieved
-        //  and tested against the input validation pattern.
-
-        let pasteText = e.clipboardData.getData('text');
-        let yearPat = new RegExp(yearInput.pattern);
-        startButton.disabled = !yearPat.test(pasteText);
-
-    } else {
-        startButton.disabled = !yearInput.checkValidity();
+  if (typeof opt === 'undefined') {
+    opt = {
+      indent: false
     }
-    console.log("startButton.disabled: " + startButton.disabled);
+  }
+  const para = document.createElement('p')
+  para.className = 'msg'
+  if (opt.indent) {
+    para.classList.add('pl-2')
+  }
+  const txnd = document.createTextNode(msg)
+  para.appendChild(txnd)
+  msgDiv.appendChild(para)
 }
 
+// remvAllMsg removes all messages from the msgs div
+function remvAllMsg (msgDiv) {
+  // Remove all messages in the #msgs div
+  // Called throughout
+
+  while (msgDiv.firstChild) {
+    msgDiv.removeChild(msgDiv.lastChild)
+  }
+}
+
+function chkEnable (e) {
+  // If year input field is valid, enable the Start button
+
+  console.log('chkEnable entered, type: ' + e.type)
+  if (e.type === 'paste') {
+    // Paste events are fired before the clipboard data is posted to the document,
+    //  so checkValidity cannot be used.  The clipboard data must be retrieved
+    //  and tested against the input validation pattern.
+
+    const pasteText = e.clipboardData.getData('text')
+    const yearPat = new RegExp(yearInput.pattern)
+    startButton.disabled = !yearPat.test(pasteText)
+  } else {
+    startButton.disabled = !yearInput.checkValidity()
+  }
+  console.log('startButton.disabled: ' + startButton.disabled)
+}
+
+window.scraper.onDisplayMsg((msg, opt) => {
+  addMsg(mL, msg, opt)
+})
+
+window.scraper.onRemoveMsgs((msg, opt) => {
+  remvAllMsg(mL)
+})
+
+window.scraper.onChangeStartButton((state) => {
+  switch (state) {
+    case 'enable':
+      startButton.classList.remove('disabled')
+      break
+    case 'disable':
+      startButton.classList.add('disabled')
+      break
+    default:
+      console.log(`onChangeStartButton: unrecognized state - ${state}`)
+  }
+})
+
 // On year input change, keyup and paste, enable Start button if year is valid
-yearInput.addEventListener("change", chkEnable, false);
-yearInput.addEventListener("keyup", chkEnable, false);
-yearInput.addEventListener("paste", chkEnable, false);
+yearInput.addEventListener('change', chkEnable, false)
+yearInput.addEventListener('keyup', chkEnable, false)
+yearInput.addEventListener('paste', chkEnable, false)
 
 // Add EventListener for Start button
-console.log("past-renderer Mainline: Adding event listener to Start button");
-startButton.addEventListener("click", async (evt) => {
-    // After Start click:
-    evt.preventDefault();
-    console.log("past-renderer Mainline: Start button clicked, disable Start button");
-    remvAllMsg(mL);   // Remove any previous messages
-    let enteredYear = yearInput.value;
+console.log('past-renderer Mainline: Adding event listener to Start button')
+startButton.addEventListener('click', async (evt) => {
+  // After Start click:
+  evt.preventDefault()
+  console.log('past-renderer Mainline: Start button clicked, disable Start button')
+  remvAllMsg(mL) // Remove any previous messages
+  const enteredYear = yearInput.value
 
-    if (enteredYear == "") {
-        addMsg(mL, "A year (yyyy) is required");
-        startButton.classList.remove("disabled");
-        return; 
-    }
-    const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + enteredYear + '/index.html';
-    if (!fs.existsSync(tablePath)) {
-        addMsg(mL, tablePath + " not found");
-        startButton.classList.remove("disabled");
-        return; 
-    }
-    startButton.classList.add("disabled");  // Disable the button
-    addMsg(mL, "New and updated days:");
+  if (enteredYear === '') {
+    addMsg(mL, 'A year (yyyy) is required')
+    startButton.classList.remove('disabled')
+    return
+  }
 
-    // Call NewDays to identify new and changed days.
-    // If there are new and changed days, invoke Insert to update the local
-    //   database and create an import file for the remote database.
-    if (NewDays(enteredYear, mL)) {
-        Insert(mL);
-    }
+  // Send the year to be processed to past.js
+  window.scraper.send('process-year', enteredYear)
 
-    console.log("past-renderer Mainline: enable Start button")
-    startButton.classList.remove("disabled");   // Enable the Start button
-});
+  console.log('past-renderer Mainline: enable Start button')
+  startButton.classList.remove('disabled') // Enable the Start button
+})

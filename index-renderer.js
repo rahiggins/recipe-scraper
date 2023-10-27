@@ -4,48 +4,37 @@
 
 // Code structure:
 //
-//   Mainline
-//    Launch Puppeteer
-//    EventListener handler for Start button
-//      For each date to be processed 
-//      |  Call TPscrape
-//      |    Call sectionScrape
-//      |    For each article in section
-//      |      Call artScrape
-//      |  Call addArticles
-//      |_ Call processSelectedArticles
-//      Call updateIndexHTML
-//      Call processNewDays
-//      Listen for reply from index.js process
-//      Send invoke-insert to index.js process
-
-const { ipcRenderer } = require('electron'); // InterProcess Communications
+//  Mainline
+//    Listen for currentButton 'click' event
+//      Send 'mode', 'current' message to the main process
+//    Listen for pastButton 'click' event
+//      Send 'mode', 'past' message to the main process
 
 // Mainline function
-async function Mainline() {
-    console.log("Entered Mainline");
+async function Mainline () {
+  console.log('Entered Mainline')
 
-    // Add EventListener for current button
-    console.log("Mainline: Adding event listener to current button");
-    currentButton = document.getElementById("current");
-    currentButton.addEventListener("click", async (evt) => {
-        // After current click:
-        evt.preventDefault();
-        console.log("Mainline: current button clicked");
-        ipcRenderer.send('mode', 'current');
-    })
+  // Add EventListener for current button
+  console.log('Mainline: Adding event listener to current button')
+  const currentButton = document.getElementById('current')
+  currentButton.addEventListener('click', async (evt) => {
+    // After current click:
+    evt.preventDefault()
+    console.log('Mainline: current button clicked')
+    window.scraper.send('mode', 'current')
+  })
 
-    // Add EventListener for past button
-    console.log("Mainline: Adding event listener to past button");
-    pastButton = document.getElementById("past");
-    pastButton.addEventListener("click", async (evt) => {
-        // After past click:
-        evt.preventDefault();
-        console.log("Mainline: past button clicked");
-        ipcRenderer.send('mode', 'past');
-    })
+  // Add EventListener for past button
+  console.log('Mainline: Adding event listener to past button')
+  const pastButton = document.getElementById('past')
+  pastButton.addEventListener('click', async (evt) => {
+    // After past click:
+    evt.preventDefault()
+    console.log('Mainline: past button clicked')
+    window.scraper.send('mode', 'past')
+  })
 }
 
 // End of function definitions
 
-Mainline(); // Launch puppeteer and add event listener for Start button
+Mainline() // Launch puppeteer and add event listener for Start button
