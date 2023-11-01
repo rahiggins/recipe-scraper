@@ -262,10 +262,9 @@ async function TPscrape (url, epoch) {
     function getRecipes ($) {
       // Called from artScrape
       // Input is a Cheerio query function for the article page HTML
-      // Returns recipeList array [{name:, link:} ...]
+      // Pushes items to the recipeList array [{name:, link:} ...]
+      // Returns a boolean indicating whether or not any recipes were found
       Log('getRecipes entered')
-
-      let recipes = false
 
       // Look for recipe links, which occur in several formats
       //  Create recipe objects {name: , link:} from <a> elements
@@ -276,7 +275,6 @@ async function TPscrape (url, epoch) {
         const pText = $(this).text()
         // console.log("p.evys1bk0 loop - <p> text: " + pText)
         if (pText.match(/Recipe[s]?:|Pairing[s]?:|Eat:|Related:/) != null) {
-          recipes = true
           console.log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
           $('a', $(this)).each(function () {
             const name = $(this).text().trim()
@@ -301,7 +299,6 @@ async function TPscrape (url, epoch) {
                     paraanch.text() === $(this).text() &&
                     paraanch.text() !== 'View the full recipe.' &&
                     paraanch.attr('href').includes('cooking.nytimes.com')) {
-          recipes = true // Recipes were found
           console.log('Recipes found -  standalone <p> element')
           const recipe = {
             name: paraanch.text(),
@@ -324,7 +321,6 @@ async function TPscrape (url, epoch) {
       $(h2s).has('a').each(function () {
         if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
           console.log('Alternate recipes found - H2 elements')
-          recipes = true
           $('a', this).each(function () {
             const recipe = {
               name: $(this).text(),
@@ -348,7 +344,6 @@ async function TPscrape (url, epoch) {
       $('h3').has('a').each(function () {
         if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
           console.log('H3 recipes found')
-          recipes = true
           $('a', this).each(function () {
             console.log('Title: ' + $(this).text())
             console.log('Link: ' + $(this).attr('href'))
@@ -367,10 +362,8 @@ async function TPscrape (url, epoch) {
         }
       })
 
-      if (recipes) {
-        console.log('Found ' + recipeList.length.toString() + ' recipes')
-      }
-      return recipes
+      console.log('Found ' + recipeList.length.toString() + ' recipes')
+      return recipeList.length > 0
     }
 
     // Retrieve article page (following redirects)
