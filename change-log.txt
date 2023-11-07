@@ -1,3 +1,16 @@
+11/6/2023
+    - Change function getRecipes to handle recipe links where the recipe name is
+      split between multiple <a> elements.  Also consolidate duplicate href
+      checking and consolidate examination of h2 and h3 element checking for
+      recipes.
+    - Replace ipcMain.on with ipcMain.once in functions processSelectedArticles, 
+      processNewDays, createButton, getAction and addArticles.
+
+10/31/2023
+    Change function getRecipes to return the expression 'recipeList.length > 0',
+    instead of returning a boolean set during the function's processing to avoid
+    returning a spurious 'true' values.
+
 10/26/2023
     - Node Intregration disabled and Context Isolation enabled in all renderers.
     - Javascript Standard Style enforced.

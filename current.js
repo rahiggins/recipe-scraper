@@ -4,7 +4,7 @@
 // recipe-scraper (current) scrapes Today's Paper pages for food articles and
 //  scrapes those aritcles for recipes
 
-// Context-isolation version 1.0
+// Context-isolation version 1.0.2
 
 // Code structure:
 //
@@ -20,12 +20,12 @@
 //   function sectionScrape
 //
 //  function processSelectedArticles
-//    ipcMain.on('submitted')
+//    ipcMain.once('submitted')
 //
 //  function updateIndexHTML
 //
 //  function processNewDays
-//    ipcMain.on('continue')
+//    ipcMain.once('continue')
 //      calls NewDays
 //
 //  function checkExisting
@@ -33,16 +33,16 @@
 //  function dayCompare
 //    function rowsText
 //    function createButton
-//      ipcMain.on('created')
+//      ipcMain.once('created')
 //      global.win.webContents.send('create-button')
 //    function getAction
-//      ipcMain.on('button-action')
+//      ipcMain.once('button-action')
 //      global.win.webContents.send('enable-action-buttons')
 //
 //  function Mainline
 //    function launchPup
 //    function addArticles
-//      ipcMain.on('added')
+//      ipcMain.once('added')
 //      global.win.webContents.send('add-articles')
 //    ipcMain.on('process-date')
 //      global.win.webContents.send('add-button')
@@ -267,24 +267,25 @@ async function TPscrape (url, epoch) {
       Log('getRecipes entered')
 
       // Look for recipe links, which occur in several formats
-      //  Create recipe objects {name: , link:} from <a> elements
-      //  and push onto recipeList array
-      //
+      //  Extract text and href from <a> elements and push onto
+      //  textArray and hrefArray.
+
+      const textArray = []
+      const hrefArray = []
       // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021)
       $('p.evys1bk0').each(function () {
         const pText = $(this).text()
         // console.log("p.evys1bk0 loop - <p> text: " + pText)
         if (pText.match(/Recipe[s]?:|Pairing[s]?:|Eat:|Related:/) != null) {
-          console.log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
+          Log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
           $('a', $(this)).each(function () {
             const name = $(this).text().trim()
             if (name !== '') { // 4/23/2014 - duplicate <a> elements, 2nd with no text
-              const recipe = {
-                name,
-                link: $(this).attr('href')
-              }
-              console.log(recipe)
-              recipeList.push(recipe)
+              const href = $(this).attr('href')
+              Log(` ${name}`)
+              Log(` ${href}`)
+              textArray.push(name)
+              hrefArray.push(href)
             }
           })
         }
@@ -298,69 +299,75 @@ async function TPscrape (url, epoch) {
         if (paraanch.length === 1 &&
                     paraanch.text() === $(this).text() &&
                     paraanch.text() !== 'View the full recipe.' &&
-                    paraanch.attr('href').includes('cooking.nytimes.com')) {
-          console.log('Recipes found -  standalone <p> element')
-          const recipe = {
-            name: paraanch.text(),
-            link: paraanch.attr('href')
-          }
-
-          // Check for duplicate recipe link before adding recipe to recipeList
-          //  For Maximum Flavor, Make These Spice Blends at Home - 2/24/2021
-          const dup = recipeList.filter(item => (item.link === recipe.link))
-          if (dup.length === 0) {
-            // console.log(recipe);
-            recipeList.push(recipe)
-          }
+                    paraanch.attr('href').includes('cooking.nytimes.com/recipes')) {
+          Log('Recipes found -  standalone <p> element')
+          const name = paraanch.text()
+          const href = paraanch.attr('href')
+          Log(` ${name}`)
+          Log(` ${href}`)
+          textArray.push(name)
+          hrefArray.push(href)
         }
       })
 
       // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com
       //  8/14/2020 A Summer Lunch That Feels Like a Splurge
       //  8/30/2023 Claire Saffitz’s Foolproof Recipe for Making Macarons (multiple <a> elements)
-      $(h2s).has('a').each(function () {
-        if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
-          console.log('Alternate recipes found - H2 elements')
-          $('a', this).each(function () {
-            const recipe = {
-              name: $(this).text(),
-              link: $(this).attr('href')
-            }
-
-            // Check for duplicate recipe link before adding recipe to recipeList
-            const dup = recipeList.filter(item => (item.link === recipe.link))
-            if (dup.length === 0) {
-              // console.log(recipe);
-              recipeList.push(recipe)
-            }
-          })
-        }
-      })
-
       // Look for h3 elements that contain links and whose href includes 'cooking.nytimes.com/recipes'
       //  2/14/2021 Rediscovering Russian Salad
       //  10/12/2022 Boneless Chicken Thighs Are the Star of These Easy Dinners
       //  11/16/2022 include 'cooking.nytimes.com/recipes' to exclude 'cooking.nytimes.com/thanksgiving'
-      $('h3').has('a').each(function () {
+      $('h2, h3').has('a').each(function () {
+        const tNm = $(this).prop('tagName')
         if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
-          console.log('H3 recipes found')
+          console.log(`Alternate recipes found - ${tNm} elements`)
           $('a', this).each(function () {
-            console.log('Title: ' + $(this).text())
-            console.log('Link: ' + $(this).attr('href'))
-            const recipe = {
-              name: $(this).text(),
-              link: $(this).attr('href')
-            }
-
-            // Check for duplicate recipe link before adding recipe to recipeList
-            const dup = recipeList.filter(item => (item.link === recipe.link))
-            if (dup.length === 0) {
-              console.log(recipe)
-              recipeList.push(recipe)
-            }
+            const name = $(this).text()
+            const href = $(this).attr('href')
+            Log(` ${name}`)
+            Log(` ${href}`)
+            textArray.push(name)
+            hrefArray.push(href)
           })
         }
       })
+
+      // Look for duplicate hrefs.
+      //  For Maximum Flavor, Make These Spice Blends at Home - 2/24/2021
+      //  I Lost My Appetite Because of Covid. This Sichuan Flavor Brought It Back. - 1/24/2021
+      //  How to Turn the Humble Lentil Into an Extravagant Luxury - 3/27/2022
+      //  This Sheet-Pan Vegetarian Dinner Can’t Get Much Simpler - 9/27/2023
+      // For duplicate hrefs with duplicate names, ignore duplicates.
+      //  For duplicate hrefs with disparate names, concatenate the names.
+      // Create an array of recipe objects { name: link: } for each unique href.
+
+      let lastHref = ''
+      let nameAccum = ''
+      for (let i = 0; i < hrefArray.length; i += 1) {
+        // For each <a> element ...
+        if (hrefArray[i] !== lastHref) {
+          // If the href changed ...
+          if (lastHref !== '') {
+            // ... and it's not the first time through the loop, push the previous
+            //  recipe to the recipeList array
+            recipeList.push({ name: nameAccum, link: lastHref })
+            nameAccum = '' // Reset the recipe name accumulator
+          }
+          // ... save the new href and the new recipe name
+          lastHref = hrefArray[i]
+          nameAccum = textArray[i]
+        } else {
+          // If the href hasn't changed ...
+          if (textArray[i] !== nameAccum) {
+            // ... and the text has changed ...
+            nameAccum = nameAccum.concat(' ', textArray[i]) // ... add the changed txt to the recipe name
+          }
+        }
+      } // End of loop
+      if (hrefArray.length > 0) {
+        // If there are any child <a> elements, push the last recipe to the recipeList array
+        recipeList.push({ name: nameAccum, link: lastHref })
+      }
 
       console.log('Found ' + recipeList.length.toString() + ' recipes')
       return recipeList.length > 0
@@ -634,7 +641,7 @@ async function processSelectedArticles (arr) {
   //
   console.log('processSelectedArticles: entered')
   return new Promise(function (resolve) {
-    ipcMain.on('submitted', (evt, checkedArticleIndicesString) => {
+    ipcMain.once('submitted', (evt, checkedArticleIndicesString) => {
       const checkedArticleIndices = JSON.parse(checkedArticleIndicesString)
       if (checkedArticleIndices.length > 0) { // If any articles were checked, append date row table HTML
         newTableHTML += dateRowHTML
@@ -761,7 +768,7 @@ async function processNewDays (yyyy) {
 
   console.log('processNewDays: entered')
   return new Promise(function (resolve) {
-    ipcMain.on('continue', () => {
+    ipcMain.once('continue', () => {
       NewDays(yyyy)
       resolve() // Resolve Promise
     })
@@ -854,7 +861,7 @@ async function dayCompare (newTable, oldTable) {
     // Output:  a promise resolved when the renderer process has created the button
     Log('Creating action button ' + text)
     return new Promise(function (resolve) {
-      ipcMain.on('created', () => {
+      ipcMain.once('created', () => {
         Log('create-button resolving')
         resolve()
       })
@@ -867,7 +874,7 @@ async function dayCompare (newTable, oldTable) {
     // Output:  a promise, resolved when an action button is clicked,
     //          with the name of the action button clicked
     return new Promise(function (resolve) {
-      ipcMain.on('button-action', (event, action) => {
+      ipcMain.once('button-action', (event, action) => {
         Log('button-action resolving with ' + action)
         resolve(action)
       })
@@ -1214,7 +1221,7 @@ async function Mainline () {
     //
     console.log('addArticles: entered')
     return new Promise(function (resolve) {
-      ipcMain.on('added', () => {
+      ipcMain.once('added', () => {
         console.log('addArticles: resolving')
         resolve() // Resolve Promise
       })
