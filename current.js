@@ -1,8 +1,8 @@
 // This module executes the 'current' mode of the recipe-scraper application.  Index.js issues
 //  require for this module.
 
-// recipe-scraper (current) scrapes Today's Paper pages for food articles and
-//  scrapes those aritcles for recipes
+// recipe-scraper (current) scrapes Today's Paper pages for food articles and scrapes those aritcles for recipes
+// It connects to a remote Chrome instance, which must be logged into nytimes.com, which prevents pages from being obscured by a log in prompt.
 
 // Context-isolation version 1.0.2
 
@@ -11,6 +11,8 @@
 //  Global variable definitions
 //  Global function definitions
 //   function Log
+//
+//  function connectPup
 //
 //  function TPscrape
 //   function artScrape
@@ -47,11 +49,12 @@
 //    ipcMain.on('process-date')
 //      global.win.webContents.send('add-button')
 //
+//   app.on('will-quit')
 
 // Program flow:
 //
 //   Mainline
-//    Launch Puppeteer
+//    Connect Puppeteer to a remote Chrome instance
 //    Listen for a 'process-date' message from current-renderer.js
 //      For each date to be processed
 //      |  Call TPscrape
@@ -127,6 +130,41 @@ function Log (text) {
   // If debugging, write text to console.log
   if (debug) {
     console.log(text)
+  }
+}
+
+async function connectPup () {
+  // Connect Puppeteer to an existing instance of Chrome that is logged in
+  //  to nytimes.com and create a new page
+  // Called from createWindow in Mainline
+
+  console.log('connectPup: entered')
+
+  // If already connected to Chrome, just exit
+  if (typeof browser !== 'undefined') {
+    if (browser.isConnected()) {
+      console.log('Already connected')
+      return 0
+    }
+  }
+
+  // Try to obtain the remote-debugging Chrome endpoint.  If successful, connect
+  //  puppeteer to the remote-debugging instance of Chrome, create a new page
+  //  and return 0. If unsuccessful, return -1, terminating the application.
+  const url = 'http://127.0.0.1:9222/json/version'
+  try {
+    const resp = await needle('get', url)
+    Log(resp.body.webSocketDebuggerUrl)
+    browser = await puppeteer.connect({
+      browserWSEndpoint: resp.body.webSocketDebuggerUrl,
+      defaultViewport: null
+    })
+
+    console.log('connectPup: exiting')
+    return 0
+  } catch (e) {
+    console.error('Unable to obtain webSocketDebuggerUrl: ' + e.code)
+    return -1
   }
 }
 
@@ -373,9 +411,10 @@ async function TPscrape (url, epoch) {
       return recipeList.length > 0
     }
 
-    // Retrieve article page (following redirects)
-    const resp = await needle('get', url, { follow_max: 10 })
-    const $ = cheerio.load(resp.body)
+    // Retrieve article page
+    await page.goto(url)
+    const html = await page.content()
+    const $ = cheerio.load(html)
 
     getTitle($) // Get arttype, title and ATDPresent
     // Create article table row
@@ -1191,24 +1230,14 @@ async function dayCompare (newTable, oldTable) {
 async function Mainline () {
   console.log('Entered Mainline, awaiting Puppeteer launch')
 
-  async function launchPup (opt) {
-    // Launch Puppeteer and create a page
-    // Called from Mainline
-
-    console.log('launchPup: entered')
-    browser = await puppeteer.launch(opt)
-    page = await browser.newPage()
-    // await page.setDefaultNavigationTimeout(0);
-    page.setDefaultNavigationTimeout(0)
-    console.log('launchPup: exiting')
-  }
-
   // Construct path to last-date-processed file
   const lastDateFile = path.join(app.getPath('appData'), app.getName(), 'LastDate.txt')
   console.log('lastDateFile: ' + lastDateFile)
 
-  // Launch Puppeteer
-  await launchPup({ headless: 'new' })
+  // Connect to a remote instance of Chrome and create a new tab in which to navigate to nytimes.com pages
+  await connectPup()
+  page = await browser.newPage()
+  page.setDefaultNavigationTimeout(0) // Make the navigation timeout unlimited
 
   async function addArticles (arrString) {
     // Called from Mainline
@@ -1455,5 +1484,19 @@ async function Mainline () {
 }
 
 // End of function definitions
+
+app.on('will-quit', async () => {
+  // Close the application's tab in the remote Chrome instance
+  if (!browser.isConnected()) {
+    // Puppeteer will disconnect from the remote browser after a period of inactivity.
+    // If this has happened, reconnect.
+    await connectPup()
+  }
+  try {
+    await page.close()
+  } catch (e) {
+    Log('Page close error - ' + e)
+  }
+})
 
 Mainline() // Launch puppeteer and add event listener for Start button
