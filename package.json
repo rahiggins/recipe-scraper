@@ -11,7 +11,7 @@
   "dependencies": {
     "bufferutil": "^4.0.8",
     "cheerio": "^1.0.0-rc.12",
-    "electron": "^27.0.2",
+    "electron": "^28.1.4",
     "moment": "^2.29.4",
     "needle": "^3.2.0",
     "newdays": "file:../newdays",
