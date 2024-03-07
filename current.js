@@ -304,17 +304,18 @@ async function TPscrape (url, epoch) {
       // Returns a boolean indicating whether or not any recipes were found
       Log('getRecipes entered')
 
-      // Look for recipe links, which occur in several formats
+      // Look for recipe links, which occur in several formats, in the <section> named articleBody
       //  Extract text and href from <a> elements and push onto
       //  textArray and hrefArray.
 
       const textArray = []
       const hrefArray = []
-      // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021)
-      $('p.evys1bk0').each(function () {
+      const articleBody = $('section[name=articleBody]')
+      // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021) "^Eat:" (1/24/2024)
+      $('p.evys1bk0', articleBody).each(function () {
         const pText = $(this).text()
         // console.log("p.evys1bk0 loop - <p> text: " + pText)
-        if (pText.match(/Recipe[s]?:|Pairing[s]?:|Eat:|Related:/) != null) {
+        if (pText.match(/^Recipe[s]?:|^Pairing[s]?:|^Eat:|^Related:/) != null) {
           Log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
           $('a', $(this)).each(function () {
             const name = $(this).text().trim()
@@ -355,7 +356,7 @@ async function TPscrape (url, epoch) {
       //  2/14/2021 Rediscovering Russian Salad
       //  10/12/2022 Boneless Chicken Thighs Are the Star of These Easy Dinners
       //  11/16/2022 include 'cooking.nytimes.com/recipes' to exclude 'cooking.nytimes.com/thanksgiving'
-      $('h2, h3').has('a').each(function () {
+      $('h2, h3', articleBody).has('a').each(function () {
         const tNm = $(this).prop('tagName')
         if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
           console.log(`Alternate recipes found - ${tNm} elements`)

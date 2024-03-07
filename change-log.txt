@@ -1,3 +1,11 @@
+2//2024
+    Change function getRecipes:
+        - Limit the search for recipe links to the <section> element named articleBody.
+        - For <p> elements containing 'Recipe[s]:', 'Pairing[s]:, 'Eat:' etc, require those terms to be at the beginning of the text.
+
+2/16/2024
+    Change current.js to connect to a remote instance of Chrome.
+
 11/6/2023
     - Change function getRecipes to handle recipe links where the recipe name is
       split between multiple <a> elements.  Also consolidate duplicate href
