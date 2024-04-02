@@ -361,8 +361,15 @@ async function TPscrape (url, epoch) {
         if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
           console.log(`Alternate recipes found - ${tNm} elements`)
           $('a', this).each(function () {
-            const name = $(this).text()
+            let name = $(this).text()
             const href = $(this).attr('href')
+
+            // If the <a> element text starts with 'Recipe: ', use the remainder of the text as the recipe's name (3/24/2024)
+            const recipeMatch = name.match(/^Recipe: (.*)$/)
+            if (recipeMatch) {
+              name = recipeMatch[1]
+            }
+
             Log(` ${name}`)
             Log(` ${href}`)
             textArray.push(name)
