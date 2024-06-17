@@ -1,9 +1,25 @@
 6/16/2024
+    Restore deleted change-log.txt entries: 4/1/2024, 3/6/2024, 2/16/2024
+
+6/16/2024
     Change current.js
         - Check for captcha and wait for navigation
     Change function getRecipes:
         - Add a check for a <p> element that contains <strong> elements, each of which contains an <a> element that references cooking.nytimes.com/recipes/
         - Fix problem with duplicate checking introduced by 11/6/2023 update: keep track of hrefs added to recipeList and before adding to recipeList, check if its href was already added
+
+4/1/2024
+    Change function getRecipes:
+        Check whether the text of an h3 link to a recipe starts with 
+        'Recipe: '. If so, discard 'Recipe: ' and use the remainder of the text as the recipe name.  
+
+3/6/2024
+    Change function getRecipes:
+        - Limit the search for recipe links to the <section> element named articleBody.
+        - For <p> elements containing 'Recipe[s]:', 'Pairing[s]:, 'Eat:' etc, require those terms to be at the beginning of the text.
+
+2/16/2024
+    Change current.js to connect to a remote instance of Chrome.
 
 11/6/2023
     - Change function getRecipes to handle recipe links where the recipe name is
