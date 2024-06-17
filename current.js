@@ -205,6 +205,7 @@ async function TPscrape (url, epoch) {
     let ATDPresent
     let h2s
     const recipeList = []
+    const hrefList = [] // Array of hrefs already added to recipeList
 
     function getTitle ($) {
       // Get a article's title and attibutes:
@@ -347,6 +348,26 @@ async function TPscrape (url, epoch) {
           textArray.push(name)
           hrefArray.push(href)
         }
+
+        // <p> element containing <strong> elements that contain a link to a recipe - How Will I Know if My Braise Is Ready? 3/20/2024
+        const strongs = $('strong', this)
+        if (strongs.length > 0) {
+          let first = true
+          $('strong a', this).each(function () {
+            const href = $(this).attr('href')
+            if (href.includes('cooking.nytimes.com/recipes/')) {
+              const name = $(this).text()
+              textArray.push(name)
+              hrefArray.push(href)
+              if (first) {
+                Log('Recipes found - <p> element comprising <strong> elements')
+                first = false
+              }
+              Log(` ${name}`)
+              Log(` ${href}`)
+            }
+          })
+        }
       })
 
       // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com
@@ -394,9 +415,13 @@ async function TPscrape (url, epoch) {
         if (hrefArray[i] !== lastHref) {
           // If the href changed ...
           if (lastHref !== '') {
-            // ... and it's not the first time through the loop, push the previous
-            //  recipe to the recipeList array
-            recipeList.push({ name: nameAccum, link: lastHref })
+            // ... and it's not the first time through the loop, push the previous recipe to the recipeList array ...
+            if (!hrefList.includes(lastHref)) {
+              // ... if its href has not already been added to recipeList -
+              // 5 Festive Recipes for a Juneteenth Feast - 06/12/2024
+              recipeList.push({ name: nameAccum, link: lastHref })
+              hrefList.push(lastHref)
+            }
             nameAccum = '' // Reset the recipe name accumulator
           }
           // ... save the new href and the new recipe name
@@ -411,8 +436,11 @@ async function TPscrape (url, epoch) {
         }
       } // End of loop
       if (hrefArray.length > 0) {
-        // If there are any child <a> elements, push the last recipe to the recipeList array
-        recipeList.push({ name: nameAccum, link: lastHref })
+        // If there are any child <a> elements, push the last recipe to the recipeList array ...
+        if (!hrefList.includes(lastHref)) {
+          // ... if its href has not already been added to recipeList
+          recipeList.push({ name: nameAccum, link: lastHref })
+        }
       }
 
       console.log('Found ' + recipeList.length.toString() + ' recipes')
@@ -422,7 +450,15 @@ async function TPscrape (url, epoch) {
     // Retrieve article page
     await page.goto(url)
     const html = await page.content()
-    const $ = cheerio.load(html)
+    let $ = cheerio.load(html)
+
+    // Check for a captcha.
+    if ($('iframe').attr('src')?.includes('captcha')) {
+      // If so, wait until the captcha is solved.
+      await page.waitForNavigation() // Navigation to the article page
+      const html = await page.content()
+      $ = cheerio.load(html)
+    }
 
     getTitle($) // Get arttype, title and ATDPresent
     // Create article table row
