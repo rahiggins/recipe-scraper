@@ -4,7 +4,7 @@
 // recipe-scraper (current) scrapes Today's Paper pages for food articles and scrapes those aritcles for recipes
 // It connects to a remote Chrome instance, which must be logged into nytimes.com, which prevents pages from being obscured by a log in prompt.
 
-// Context-isolation version 1.0.2
+// fixTitle version 1.0.3
 
 // Code structure:
 //
@@ -113,6 +113,7 @@ let sect // Magazine | Food
 let dateRowHTML = '' // Table HTML for date row
 let browser // Puppeteer browser
 let page // Puppeteer page
+let lastRandom // Last generated random wait interval
 
 let dateEntered // boolean
 
@@ -156,8 +157,7 @@ async function connectPup () {
     const resp = await needle('get', url)
     Log(resp.body.webSocketDebuggerUrl)
     browser = await puppeteer.connect({
-      browserWSEndpoint: resp.body.webSocketDebuggerUrl,
-      defaultViewport: null
+      browserWSEndpoint: resp.body.webSocketDebuggerUrl
     })
 
     console.log('connectPup: exiting')
@@ -166,6 +166,25 @@ async function connectPup () {
     console.error('Unable to obtain webSocketDebuggerUrl: ' + e.code)
     return -1
   }
+}
+
+function getRandomInt (min = 5000, max = 25000, gap = 3000) {
+  // Generate a random number of milliseconds between *min* and *max* to be used as
+  //  a delay before accessing nytimes.com pages to avoid being blocked as a robot.
+  // The number generated must be *gap* seconds or more from the previously returned number, which is
+  //  contained in the global variable lastRandom
+
+  let random
+
+  // Find a millisecond delay *gap* seconds or more from the last delay
+  do {
+    random = Math.floor(Math.random() * (max - min) + min) // The maximum is exclusive and the minimum is inclusive
+  } while (Math.abs(random - lastRandom) < gap)
+  console.log('Click delay: ' + random.toString() + ' ms')
+
+  // Set the found delay as the last delay and return it\
+  lastRandom = random
+  return lastRandom
 }
 
 async function TPscrape (url, epoch) {
@@ -187,9 +206,9 @@ async function TPscrape (url, epoch) {
   const msg = "Retrieving Today's Paper page for " + Day + ', ' + MDY
   global.win.webContents.send('display-msg', msg)
 
-  async function artScrape (url) {
+  async function artScrape (artObj) {
     // Called from sectionScrape
-    // Input is article URL
+    // Input is an artObj object
     // Retrieve article page and scrape:
     //   - presence of And to Drink
     //   - article title decoration
@@ -198,12 +217,9 @@ async function TPscrape (url, epoch) {
     // Form table HTML for article title and recipes
     // Return { hasRecipes:, html: }
 
+    const url = artObj.href
     console.log('artScrape entered with url: ' + url)
 
-    let title
-    let arttype
-    let ATDPresent
-    let h2s
     const recipeList = []
     const hrefList = [] // Array of hrefs already added to recipeList
 
@@ -214,11 +230,11 @@ async function TPscrape (url, epoch) {
       // Called from artScrape
       // Input is a Cheerio object containing article page HTML
       // Sets variables h2s, ATDPresent, arttype, title
+      Log('Function getTitle entered')
 
       // See if And to Drink is present
-      ATDPresent = ''
-      h2s = $('h2.eoo0vm40') // h2s also referenced in getRecipes()
-      $(h2s).each(function () {
+      let ATDPresent = ''
+      $('h2.eoo0vm40').each(function () {
         if ($(this).text().includes('And to Drink')) {
           ATDPresent = ' *'
           // console.log("And to Drink found");
@@ -243,6 +259,8 @@ async function TPscrape (url, epoch) {
 
         // Define title decorations that have an article designation
         //  other than 'article'
+        Log('Function articleType entered')
+
         const articleTypes = {
           pairings: 'pairings',
           'the pour': 'wine',
@@ -251,6 +269,7 @@ async function TPscrape (url, epoch) {
 
         // Return 'article' for any title decoration not defined
         //  in articleType, else return key value
+        Log('Function articleType exiting')
         switch (articleTypes[key]) {
           case undefined:
             return 'article'
@@ -260,7 +279,7 @@ async function TPscrape (url, epoch) {
       }
 
       // The default article designation is 'article'
-      arttype = 'article'
+      let arttype = 'article'
 
       // Title decorations are contained in a <p> element of class e6idgb70.
       // See if a title decoration is present, and if so, see if it
@@ -293,9 +312,12 @@ async function TPscrape (url, epoch) {
         console.log('Page html:')
         console.log($.html())
       }
-      title = $(titles[0]).text()
+      const title = $(titles[0]).text()
+      Log('Function getTitle exiting')
       console.log('title: ' + title)
       console.log("arttype: '" + arttype + "'")
+
+      return [title, arttype, ATDPresent]
     }
 
     function getRecipes ($) {
@@ -338,7 +360,7 @@ async function TPscrape (url, epoch) {
         const paraanch = $('a', this)
         if (paraanch.length === 1 &&
                     paraanch.text() === $(this).text() &&
-                    paraanch.text() !== 'View the full recipe.' &&
+                    !paraanch.text().startsWith('View') &&
                     paraanch.attr('href').includes('cooking.nytimes.com/recipes')) {
           Log('Recipes found -  standalone <p> element')
           const name = paraanch.text()
@@ -443,14 +465,19 @@ async function TPscrape (url, epoch) {
         }
       }
 
+      Log('Function getRecipes exiting')
       console.log('Found ' + recipeList.length.toString() + ' recipes')
       return recipeList.length > 0
     }
 
     // Retrieve article page
+    await new Promise(resolve => setTimeout(resolve, getRandomInt())) // Wait a bit
+    Log('Function artScrape navigating to ' + url)
     await page.goto(url)
+    Log('Function artScrape getting page content')
     const html = await page.content()
     let $ = cheerio.load(html)
+    Log('Function artScrape finished loading page content to Cheerio')
 
     // Check for a captcha.
     if ($('iframe').attr('src')?.includes('captcha')) {
@@ -460,7 +487,13 @@ async function TPscrape (url, epoch) {
       $ = cheerio.load(html)
     }
 
-    getTitle($) // Get arttype, title and ATDPresent
+    // Get title, arttype and ATDPresent
+    let [title, arttype, ATDPresent] = getTitle($)
+    if (!title) {
+      // If a title could not be found (57 Sandwiches That Define New York City - 6/19/2024), use the article title from the Today's Paper page
+      title = artObj.title
+    }
+
     // Create article table row
     let tableHTML = ''
     tableHTML = tableHTML + '              <tr>\n                <td><br>\n                </td>\n                <td>' + arttype + '\n'
@@ -657,7 +690,7 @@ async function TPscrape (url, epoch) {
       }
 
       // Call function artScrape to scrape article page for recipes
-      const aTH = await artScrape(artObj.href)
+      const aTH = await artScrape(artObj)
 
       // Add values returned by artScrape to the article object (artObj)
       artObj.hasRecipes = aTH.hasRecipes

@@ -1,6 +1,6 @@
 {
   "name": "recipe-scraper",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Scrape recipes from nytimes.com",
   "main": "index.js",
   "scripts": {
@@ -15,7 +15,7 @@
     "moment": "^2.29.4",
     "needle": "^3.2.0",
     "newdays": "file:../newdays",
-    "puppeteer": "^21.4.1",
+    "puppeteer": "^23.2.0",
     "request": "^2.88.2",
     "spectre.css": "^0.5.9",
     "utf-8-validate": "^6.0.3"

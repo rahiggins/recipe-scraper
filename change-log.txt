@@ -1,3 +1,15 @@
+10/3/2024
+    Version 1.1.1
+    Change current.js
+        - In function artScrape
+            -- change its parameter from a URL to an artObj object
+            -- return the values 'title', 'arttype' and 'ATDPresent', instead of setting the value of variables defined in the scope of the calling function
+        - In function getTitle
+            -- if a title is not recognized on the article page, use the article title from the Today's Paper page
+        - Add a delay before navigating to each article to avoid being labeled robot
+        - In function getRecipe
+            -- change the test for the recipe name being 'View the full recipe' to the recipe name starts with 'View'
+
 6/16/2024
     Restore deleted change-log.txt entries: 4/1/2024, 3/6/2024, 2/16/2024
 
