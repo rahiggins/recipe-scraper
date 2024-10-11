@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld(
     },
     onEnableStartButton: (fn) => {
       ipcRenderer.on('enable-start', (event, ...args) => fn(...args))
-    }
+    },
+    added: () => ipcRenderer.send('added'),
+    articleClick: (action, href) => ipcRenderer.send('article-click', action, href),
+    submitted: (indices) => ipcRenderer.send('submitted', indices),
+    created: () => ipcRenderer.send('created')
   }
 )

@@ -237,7 +237,7 @@ window.scraper.onAddArticles((event, artsArrayString, text) => {
         evt.preventDefault()
         const artIdx = evt.target.parentNode.firstChild.value
         console.log('Article clicked: ' + artsArray[artIdx].title)
-        event.sender.send('article-click', 'click', artsArray[artIdx].href)
+        window.scraper.articleClick('click', artsArray[artIdx].href)
       }
     }
 
@@ -291,7 +291,7 @@ window.scraper.onAddArticles((event, artsArrayString, text) => {
     aL.appendChild(lbl)
   }
 
-  event.sender.send('added')
+  window.scraper.added()
   console.log('addArticles: exit')
 })
 
@@ -308,7 +308,7 @@ window.scraper.onAddButton((event, buttonText) => {
     evt.preventDefault()
     console.log('onAddButton - button clicked')
     document.removeEventListener('click', articleClick)
-    window.scraper.send('article-click', 'close')
+    window.scraper.articleClick('close')
     const ckd = document.querySelectorAll('input:checked') // Get checked articles
     const checkedArticleIndices = [] // Returned to the main process
 
@@ -323,7 +323,7 @@ window.scraper.onAddButton((event, buttonText) => {
     for (let j = 0; j < ckd.length; j++) {
       checkedArticleIndices.push(parseInt(ckd[j].value))
     }
-    event.sender.send('submitted', JSON.stringify(checkedArticleIndices))
+    window.scraper.submitted(JSON.stringify(checkedArticleIndices))
   }, { once: true }) // AddEventListener option - removes event listener after click
 })
 
@@ -395,7 +395,7 @@ window.scraper.onCreateButton((event, buttonId, buttonText) => {
 
   buttons.appendChild(createButton(buttonId, buttonText))
   buttons.lastChild.addEventListener('click', buttonSubmitted, { once: true })
-  event.sender.send('created')
+  window.scraper.created()
 })
 
 window.scraper.onEnableActionButton(() => {

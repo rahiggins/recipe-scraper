@@ -43,6 +43,8 @@ const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
 const path = require('path')
 
+app.disableHardwareAcceleration() // work-around for electron bug #43415
+
 // let x // BrowserWindow position
 // let y // BrowserWindow position
 let xArt // article BrowserWindow position
