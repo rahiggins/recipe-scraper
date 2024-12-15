@@ -1,4 +1,19 @@
-10/3/2024
+12/14/2024
+    Version 1.1.2
+    Change current.js
+        - In function artScrape
+            -- make function getRecipe async
+            -- add async function nameDiffersFromURL to check recipe name/URL consistency
+            -- change cheerio.each loops to for loops
+            -- call function nameDiffersFromURL for discovered recipe links
+            -- flag inconsistent names
+            -- for inconsistent h3 links, check for a preceding h2 element with consistent text
+            -- in checking for duplicate links, when a duplicate is found, if the first link (which would normally be retained) is flagged as inconsistent, retain the second link instead
+            -- add await to getRecipes call
+        - In function sectionScrape
+            -- in creating an artObj for epoch 3 articles, check for absolute hrefs instead of the usual relative hrefs
+                                                                                                 
+10/3/2024 
     Version 1.1.1
     Change current.js
         - In function artScrape

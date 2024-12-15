@@ -19,6 +19,8 @@
 //    function getTitle
 //      function articleType
 //    function getRecipes
+//      function nameDiffersFromURL
+//        function checkConsistency
 //   function sectionScrape
 //
 //  function processSelectedArticles
@@ -320,7 +322,7 @@ async function TPscrape (url, epoch) {
       return [title, arttype, ATDPresent]
     }
 
-    function getRecipes ($) {
+    async function getRecipes ($) {
       // Called from artScrape
       // Input is a Cheerio query function for the article page HTML
       // Pushes items to the recipeList array [{name:, link:} ...]
@@ -331,25 +333,167 @@ async function TPscrape (url, epoch) {
       //  Extract text and href from <a> elements and push onto
       //  textArray and hrefArray.
 
+      async function nameDiffersFromURL (originalName, originalHref) {
+        // For links to cooking.nytimes.com/recipes/, see if the link text is consistent with the recipe name part of the link URL
+        // E.g. name "Butter-Poached Carrots" is consistent with URL https://cooking.nytimes.com/recipes/1026250-butter-poached-carrots
+
+        // Input -  recipe name <string>
+        //          cooking.nytimes.com URL <string>
+        // Output - [ boolean, true if name differs from URL
+        //            string ] cooking.nytimes.com URL, possibly changed to a redirected location
+
+        function consistencyCheck (nameArray, urlArray) {
+          // Perform the test that determines if the recipe name text is consistent with the recipe URL.
+
+          // let matches = 0
+          let matchFound = false
+          for (let i = 0; i < nameArray.length; i++) {
+            // If one word is common to both the name and the URL, they are consistent
+
+            if (urlArray.includes(nameWords[i])) {
+              // matches += 1
+              matchFound = true
+              break
+            }
+          }
+          return matchFound
+        }
+
+        // Object used to replace letters having diacritics with the corresponding base letter
+        const diacritics = {
+          a: 'àáâãäåāą',
+          c: 'çćč',
+          d: 'đď',
+          e: 'èéêëěēę',
+          i: 'ìíîïī',
+          l: 'ł',
+          n: 'ñňń',
+          o: 'òóôõöøō',
+          r: 'ř',
+          s: 'šś',
+          t: 'ť',
+          u: 'ùúûüůŪū',
+          y: 'ÿý',
+          z: 'žżź',
+          A: 'ÀÁÂÃÄÅĀĄ',
+          C: 'ÇĆČ',
+          D: 'ĐĎ',
+          E: 'ÈÉÊËĚĒĘ',
+          I: 'ÌÍÎÏĪ',
+          L: 'Ł',
+          N: 'ÑŇŃ',
+          O: 'ÒÓÔÕÕÖØŌ',
+          R: 'Ř',
+          S: 'ŠŚ',
+          T: 'Ť',
+          U: 'ÙÚÛÜŮŪ',
+          Y: 'ŸÝ',
+          Z: 'ŽŻŹ'
+        }
+
+        // Remove punctuation (except dashes) from the recipe name and replace multiple consecutive spaces with a single space.
+        //  const name = originalName.replace(/^\d{4}:\s/, '').replaceAll(/[,:'?.’’‘()/“”]/g, '').replace(/\n\s*/, ' ').trim()
+
+        let href = originalHref
+
+        // For any letters in the recipe name that have diacritic marks, substitute the unmarked letter. Then split the name at blanks or dashes.
+        const nameWords = originalName
+          .replaceAll(/[,:'?.’’‘()/“”]/g, '') // Remove all punctuation except dashes
+          .replace(/\n\s*/, ' ') // Replace multiple spaces with a single space
+          .trim()
+          .toLowerCase()
+          .split('')
+          .map(
+            (l) =>
+              Object.keys(diacritics).find((k) => diacritics[k].includes(l)) || l
+          ) // Replace any letter having a diacritical mark with the corresponding base lettle
+          .join('')
+          .split(/[\s-]/) // Split the resulting string at spaces and dashes
+
+        // Get the recipe name part of the cooking.nytimes.com URL and split it at dashes.
+        let urlWords
+        try {
+          urlWords = href.match(/^.*\/\d{1,10}?-(.*)$/)[1].split('-')
+        } catch (e) {
+          // If the match fails, proceed with no url words
+          console.log(`urlWords error - ${e}`)
+          console.log(`URL: ${href}`)
+          console.log(` name: ${originalName}`)
+          urlWords = []
+        }
+
+        // Check for consistency
+        if (consistencyCheck(nameWords, urlWords)) {
+          return [false, href]
+        } else {
+          // If the name and URL are not consistent, see if there is a redirect to a URL that is consistent with thw recipe name
+          console.log('Inconsistent recipe name')
+          console.log(` URL: ${href}`)
+          console.log(` name: ${originalName}`)
+
+          // Get metadata for the recipe URL, look for a redirect
+          const resp = await needle('head', href)
+          if (resp.statusCode >= 300 && resp.statusCode < 400) {
+            console.log('Redirect found')
+
+            // The redirect location is in an object with the key Symbol(kHeaders)
+            //  This is from  https://stackoverflow.com/a/44734245
+            const sym = Object.getOwnPropertySymbols(resp).find(
+              (s) => s.description === 'kHeaders'
+            )
+            // Change href to the redirected location
+            href = resp[sym].location
+
+            // See if the redirected location is consistent with the recipe URL
+            let urlWords
+            try {
+              urlWords = href.match(/^.*\/\d{1,10}?-(.*)$/)[1].split('-')
+            } catch (e) {
+              // If the match fails, return indicating that the recipe name differs from the URL
+              console.log(`urlWords error - ${e}`)
+              console.log(`URL: ${href}`)
+              console.log(` name: ${originalName}`)
+              return [true, href]
+            }
+            if (consistencyCheck(nameWords, urlWords)) {
+              return [false, href]
+            }
+          }
+          // No redirect, return indicating that the recipe name differs from the URL
+          return [true, href]
+        }
+      }
+
       const textArray = []
       const hrefArray = []
       const articleBody = $('section[name=articleBody]')
+      const inconsistent = '<span class="inconsistent">inconsistent name: </span>'
       // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021) "^Eat:" (1/24/2024)
-      $('p.evys1bk0', articleBody).each(function () {
-        const pText = $(this).text()
+      const paras = $('p.evys1bk0', articleBody)
+      for (let i = 0; i < $(paras).length; i++) {
+        // $('p.evys1bk0', articleBody).each(function () {
+        const para = $(paras)[i]
+        const pText = $(para).text()
         // console.log("p.evys1bk0 loop - <p> text: " + pText)
         if (pText.match(/^Recipe[s]?:|^Pairing[s]?:|^Eat:|^Related:/) != null) {
           Log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
-          $('a', $(this)).each(function () {
-            const name = $(this).text().trim()
+          const links = $('a', para)
+          for (let j = 0; j < $(links).length; j++) {
+            // $('a', $(this)).each(function () {
+            const link = $(links)[j]
+            let name = $(link).text().trim()
             if (name !== '') { // 4/23/2014 - duplicate <a> elements, 2nd with no text
-              const href = $(this).attr('href')
+              const href1 = $(link).attr('href')
+              const [differs, href] = await nameDiffersFromURL(name, href1)
+              if (differs) {
+                name = inconsistent.concat(name)
+              }
               Log(` ${name}`)
               Log(` ${href}`)
               textArray.push(name)
               hrefArray.push(href)
             }
-          })
+          }
         }
 
         // What won't they think of next - 5 Standout Recipes From Julia Reed 9/2/2020
@@ -357,14 +501,18 @@ async function TPscrape (url, epoch) {
         // Sometimes a duplicate link in a collection of recipes, with
         //  the text "View the full recipe." - 20 Easy Salads for Hot Summer Days 7/20/2022
         //  Ignore these.
-        const paraanch = $('a', this)
+        const paraanch = $('a', para)
         if (paraanch.length === 1 &&
-                    paraanch.text() === $(this).text() &&
+                    paraanch.text() === $(para).text() &&
                     !paraanch.text().startsWith('View') &&
                     paraanch.attr('href').includes('cooking.nytimes.com/recipes')) {
           Log('Recipes found -  standalone <p> element')
-          const name = paraanch.text()
-          const href = paraanch.attr('href')
+          let name = paraanch.text()
+          const href1 = paraanch.attr('href')
+          const [differs, href] = await nameDiffersFromURL(name, href1)
+          if (differs) {
+            name = inconsistent.concat(name)
+          }
           Log(` ${name}`)
           Log(` ${href}`)
           textArray.push(name)
@@ -372,13 +520,20 @@ async function TPscrape (url, epoch) {
         }
 
         // <p> element containing <strong> elements that contain a link to a recipe - How Will I Know if My Braise Is Ready? 3/20/2024
-        const strongs = $('strong', this)
+        const strongs = $('strong', para)
         if (strongs.length > 0) {
           let first = true
-          $('strong a', this).each(function () {
-            const href = $(this).attr('href')
-            if (href.includes('cooking.nytimes.com/recipes/')) {
-              const name = $(this).text()
+          const stronglinks = $('strong a', strongs)
+          for (let k = 0; k < $(stronglinks).length; k++) {
+            // $('strong a', this).each(function () {
+            const stronglink = $(stronglinks)[k]
+            const href1 = $(stronglink).attr('href')
+            if (href1.includes('cooking.nytimes.com/recipes/')) {
+              let name = $(stronglink).text()
+              const [differs, href] = await nameDiffersFromURL(name, href1)
+              if (differs) {
+                name = inconsistent.concat(name)
+              }
               textArray.push(name)
               hrefArray.push(href)
               if (first) {
@@ -388,9 +543,9 @@ async function TPscrape (url, epoch) {
               Log(` ${name}`)
               Log(` ${href}`)
             }
-          })
+          }
         }
-      })
+      }
 
       // Look for Heading 2 elements that have an <a> element referencing cooking.nytimes.com
       //  8/14/2020 A Summer Lunch That Feels Like a Splurge
@@ -399,13 +554,19 @@ async function TPscrape (url, epoch) {
       //  2/14/2021 Rediscovering Russian Salad
       //  10/12/2022 Boneless Chicken Thighs Are the Star of These Easy Dinners
       //  11/16/2022 include 'cooking.nytimes.com/recipes' to exclude 'cooking.nytimes.com/thanksgiving'
-      $('h2, h3', articleBody).has('a').each(function () {
-        const tNm = $(this).prop('tagName')
-        if ($('a', this).attr('href').includes('cooking.nytimes.com/recipes')) {
+      const headings = $('h2, h3', articleBody).has('a')
+      for (let i = 0; i < $(headings).length; i++) {
+        // $('h2, h3', articleBody).has('a').each(function () {
+        const heading = $(headings)[i]
+        const tNm = $(heading).prop('tagName')
+        if ($('a', heading).attr('href').includes('cooking.nytimes.com/recipes')) {
           console.log(`Alternate recipes found - ${tNm} elements`)
-          $('a', this).each(function () {
-            let name = $(this).text()
-            const href = $(this).attr('href')
+          const links = $('a', heading)
+          for (let j = 0; j < $(links).length; j++) {
+            // $('a', this).each(function () {
+            const link = $(links)[j]
+            let name = $(link).text()
+            const href1 = $(link).attr('href')
 
             // If the <a> element text starts with 'Recipe: ', use the remainder of the text as the recipe's name (3/24/2024)
             const recipeMatch = name.match(/^Recipe: (.*)$/)
@@ -413,13 +574,27 @@ async function TPscrape (url, epoch) {
               name = recipeMatch[1]
             }
 
-            Log(` ${name}`)
-            Log(` ${href}`)
+            const [differs, href] = await nameDiffersFromURL(name, href1)
+            if (differs) {
+              // If the <a> element text is 'see the recipe', use the text of the <h2> element in the parent div (11/13/2024 - Meet Your New Thanksgiving Pie)
+              // (12/8/2024 - The Only Holiday Cookie Recipes You’ll Need This Year)
+              if (name.toLowerCase().endsWith('recipe')) {
+                const parentDivs = $(link).parents('div')
+                name = $('h2', parentDivs[0])?.text()
+                if (!name) {
+                  name = 'h3 recipe name not found'
+                }
+              } else {
+                name = inconsistent.concat(name)
+              }
+            }
             textArray.push(name)
             hrefArray.push(href)
-          })
+            Log(` ${name}`)
+            Log(` ${href}`)
+          }
         }
-      })
+      }
 
       // Look for duplicate hrefs.
       //  For Maximum Flavor, Make These Spice Blends at Home - 2/24/2021
@@ -451,8 +626,12 @@ async function TPscrape (url, epoch) {
           nameAccum = textArray[i]
         } else {
           // If the href hasn't changed ...
+          if (nameAccum.includes('inconsistent')) {
+            // If the previous name was inconsistent with the recipe URL, replace it with this recipe name
+            nameAccum = textArray[i]
+          }
           if (textArray[i] !== nameAccum) {
-            // ... and the text has changed ...
+            // If the text has changed ...
             nameAccum = nameAccum.concat(' ', textArray[i]) // ... add the changed txt to the recipe name
           }
         }
@@ -500,7 +679,7 @@ async function TPscrape (url, epoch) {
     tableHTML = tableHTML + '                </td>\n                <td><a href="'
     tableHTML = tableHTML + url + '">' + title + '</a>' + ATDPresent + '</td>\n              </tr>\n'
 
-    const hasRecipes = getRecipes($) // Get recipes
+    const hasRecipes = await getRecipes($) // Get recipes
     // Create recipe table rows
     for (const i in recipeList) {
       // For each recipe's URL,Look for redirects from www.nytimes.com
@@ -636,13 +815,18 @@ async function TPscrape (url, epoch) {
         case 3:
           h2 = $(link).find('h2')
           Log('Article title: ' + $(h2).text())
-          Log('Article href: ' + prot + '://' + hostnm + $(link).attr('href'))
+          href = $(link).attr('href')
+          if (!href.startsWith('https')) {
+            // 12/4/2024 - You Might Be Storing Cheese All
+            href = prot + '//' + hostnm + href
+          }
+          Log('Article href: ' + href)
           author = $(arts[a]).find('span.css-1n7hynb')
           Log('Author: ' + author.text())
           artObj = { // create an article object
             title: $(h2).text(),
             author: $(author).text(),
-            href: prot + '//' + hostnm + $(link).attr('href')
+            href
           }
           break
 
