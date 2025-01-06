@@ -236,8 +236,8 @@ window.scraper.onAddArticles((event, artsArrayString, text) => {
       if (evt.target.classList.contains('article')) {
         evt.preventDefault()
         const artIdx = evt.target.parentNode.firstChild.value
-        console.log('Article clicked: ' + artsArray[artIdx].title)
-        window.scraper.articleClick('click', artsArray[artIdx].href)
+        console.log('Article clicked: ' + (artsArray[artIdx].titleInfo.title || artsArray[artIdx].tptitle))
+        window.scraper.articleClick('click', artsArray[artIdx].url)
       }
     }
 
@@ -258,7 +258,8 @@ window.scraper.onAddArticles((event, artsArrayString, text) => {
   element.parentNode.removeChild(element)
 
   // Add a checkbox for each article to index.html
-  for (const i in artsArray) {
+  let i = 0
+  for (const artObj of artsArray) {
     stringI = i.toString()
 
     lbl = document.createElement('label')
@@ -266,7 +267,7 @@ window.scraper.onAddArticles((event, artsArrayString, text) => {
 
     checkbox = document.createElement('input')
     checkbox.type = 'checkbox'
-    if (artsArray[i].hasRecipes) {
+    if (artObj.hasRecipes) {
       checkbox.checked = true
     }
     checkbox.name = 'cbn' + stringI
@@ -278,17 +279,18 @@ window.scraper.onAddArticles((event, artsArrayString, text) => {
 
     cbTitle = document.createElement('div')
     cbTitle.className = 'article'
-    cbTitle.innerText = artsArray[i].title
+    cbTitle.innerText = artObj.titleInfo.title || artObj.tpTitle
 
     cbAuthor = document.createElement('div')
     cbAuthor.classList = 'text-gray author'
-    cbAuthor.innerText = artsArray[i].author
+    cbAuthor.innerText = artObj.author
 
     lbl.appendChild(checkbox)
     lbl.appendChild(iicon)
     lbl.appendChild(cbTitle)
     lbl.appendChild(cbAuthor)
     aL.appendChild(lbl)
+    i += 1
   }
 
   window.scraper.added()

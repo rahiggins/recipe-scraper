@@ -1,6 +1,6 @@
 {
   "name": "recipe-scraper",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "description": "Scrape recipes from nytimes.com",
   "main": "index.js",
   "scripts": {
@@ -11,11 +11,13 @@
   "dependencies": {
     "bufferutil": "^4.0.8",
     "cheerio": "^1.0.0-rc.12",
-    "electron": "^32.2.0",
+    "cheerio-get-css-selector": "^2.0.0",
+    "electron": "^33.2.1",
+    "http": "^0.0.1-security",
     "moment": "^2.29.4",
     "needle": "^3.2.0",
     "newdays": "file:../newdays",
-    "puppeteer": "^23.2.0",
+    "puppeteer": "^23.11.1",
     "request": "^2.88.2",
     "spectre.css": "^0.5.9",
     "utf-8-validate": "^6.0.3"

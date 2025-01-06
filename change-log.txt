@@ -1,3 +1,42 @@
+1/5/2025
+    Version 2.0.0
+    Scrape articles for recipes with a Tampremonkey userscript.
+
+    Upgrade Node to 23.5.0 in order to use Promise.withResolvers
+    Install the cheerio-get-css-selector package
+    Change current.js
+        - Move function artScrape to artScrape.js, which is required in a Tampremonkey userscript, Scrape.
+        - Require cheerio-get-css-selector and node:child_process
+        - Require function nameDiffersFromURL from artScrape.
+        - In function mainline
+            -- Set a wide viewport in the remote Chrome instancejs
+            -- Start an HTTP server
+        - In function sectionScrape
+            -- Instead of calling function artScrape, perform a middle click on each article link.
+            -- Wait for the response from the userscript Scrape.
+            -- Look for redirects from www.nytimes.com to cooking.nytimes.com. This processing was moved from function artScrape to sectionScrape.
+            -- If the recipe name is not consistent with the recipe URL, look for a redirect. This processing was moved from function nameDiffersFromURL to sectionScrape.
+            -- Use curl via execSync to look for redirects, instead of the request or needle package.
+            -- Create table HTML for the article and any recipes. This processing was moved from function artScrape to sectionScrape.
+            -- The article objects (artObj) returned are changed.
+    Change current-renderer.js
+        - In window.scraper.onAddArticles
+            -- The input article objects returned by TPScrape are changed
+            -- Use the Today's Paper article title when artScrape.js can't find an article title
+    Add artScrape.js
+        - Move function nameDiffersFromURL out of functon artScrape. In the Node environment, export nameDiffersFromURL.
+        - In function nameDiffersFromURL
+            -- Move the check for redirects to function sectionScrape
+        - In function artScrape
+            -- Change the function arguments
+            -- Change all uses of Cheerio to javascript querySelector(All)
+            -- Add an inconsistency property to the recipe objects that are the elements of the recipeList array.
+            -- Change the output from function getTitle from an array to an object
+            -- Change the duplicate check. Instead of comparing only adjacent elements, for each element compare all subsequent elements.
+            -- Change the object returned 
+
+
+
 12/14/2024
     Version 1.1.2
     Change current.js
