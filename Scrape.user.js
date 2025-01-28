@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Scrape
 // @namespace    http://tampermonkey.net/
-// @version      2024-12-15
+// @version      2025-01-08
 // @description  Scrape NYT articles for recipes
-// @author       You
+// @author       Me
 // @match        https://www.nytimes.com/*
+// @match        https://cooking.nytimes.com/article/*
 // @match        https://archive.nytimes.com/*
 // @exclude      https://www.nytimes.com/issue/*
 // @exclude      https://archive.nytimes.com/www.nytimes.com/indexes/*/*/*/todayspaper/index.html
@@ -54,7 +55,7 @@
     },
     onload (response) {
       const responseObj = JSON.parse(response.responseText)
-      if (responseObj.message === 'OK') {
+      if (responseObj.message === 'OK' && !debug) {
         window.close()
       }
     }

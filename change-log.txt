@@ -1,3 +1,10 @@
+1/27/2025
+    Cater to articles hosted at cooking.nytimes.com
+    Change artScrape.js
+        - In addition to a <section> named articleBody, also look for recipes in an <article> element.
+    Change Scrape.user.js
+        - Add @match https://cooking.nytimes.com/article/*
+
 1/5/2025
     Version 2.0.0
     Scrape articles for recipes with a Tampremonkey userscript.

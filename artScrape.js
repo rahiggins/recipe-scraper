@@ -245,8 +245,8 @@ function artScrape (returnObj, debug) {
     const textArray = []
     const hrefArray = []
     const inconsistentArray = []
-    // const inconsistent = '<span class="inconsistent">inconsistent name: </span>'
-    const articleBody = document.querySelector('section[name="articleBody"]')
+    // Limit the recipe search to the body of the article, which is contained in a <section> element named articleBody or an <article> element (1/8/2025 - An Easy One-Pot Method for Vegetarian Meals)
+    const articleBody = document.querySelector('section[name="articleBody"], article')
     if (!articleBody) {
       Log('No articleBody found')
       return [false, []]
