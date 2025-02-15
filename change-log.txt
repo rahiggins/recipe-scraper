@@ -1,3 +1,23 @@
+2/14/2025
+    Handle captcha pages
+    Change Scrape.user.js
+        - If a page has only 1 iFrame, it's a captcha page. Send an object with ID: 'captcha' to the recipe-scraper application
+    Change current.js
+        - In function requestListener:
+            -- handle an object with ID: 'captcha'. Display a 'captcha' message and bring the last tab into focus
+            -- for articleInfo object, if a captcha was prec=viously displayed, remove the 'captcha' message
+            -- increase the wait interval for Today's Paper page clicks
+    Change current.html
+        - Add a <div id="progressBar"> after the "msgs" div to contain the progress bar
+    Change current-renderer.js
+        - Add a div id parameter to the remove-msgs routine so that the progress bar can be removed.
+
+    Handle cooking.nytimes.com articles
+    Change artScrape.js
+        - Add p.pantry--body-long to the paragraph selector for paragraphs to be searched for recipes 
+
+
+
 1/27/2025
     Cater to articles hosted at cooking.nytimes.com
     Change artScrape.js

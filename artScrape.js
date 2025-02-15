@@ -252,7 +252,8 @@ function artScrape (returnObj, debug) {
       return [false, []]
     }
     // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021) "^Eat:" (1/24/2024)
-    const paras = articleBody.querySelectorAll('p.evys1bk0')
+    // Added class pantry--body-long "The Surprising Trick for Cooking Rice That Works for Any Grain" 2/5/2025
+    const paras = articleBody.querySelectorAll('p.evys1bk0, p.pantry--body-long')
     for (const para of paras) {
       let name
       let href

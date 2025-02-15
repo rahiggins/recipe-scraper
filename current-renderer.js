@@ -68,6 +68,7 @@ let sectArtDiv // <div> element containing a progress bar and its label
 
 const aL = document.getElementById('aL') // article list div
 const mL = document.getElementById('msgs') // messages list div
+const pB = document.getElementById('progressBar') // progress bar div
 const buttons = document.getElementById('buttons') // tableCompare buttons div
 const tableCompare = document.getElementById('tableCompare') // tableCompare table tbody element
 
@@ -157,9 +158,22 @@ window.scraper.onDisplayMsg((msg, opt) => {
   addMsg(mL, msg, opt)
 })
 
-window.scraper.onRemoveMsgs(() => {
-  // Remove all messages
-  remvAllMsg(mL)
+window.scraper.onRemoveMsgs((div) => {
+  // Remove all messages from the specified div
+  switch (div) {
+    case 'msgs':
+      remvAllMsg(mL)
+      break
+    case 'progressBar':
+      remvAllMsg(pB)
+      break
+    case 'all':
+      remvAllMsg(mL)
+      remvAllMsg(aL)
+      break
+    default:
+      remvAllMsg(mL)
+  }
 })
 
 window.scraper.onAddThrobber(() => {
@@ -192,7 +206,7 @@ window.scraper.onCreateProgressBar((max, barLabel) => {
 
   // Remove the "Retrieving Today's Paper" message and add the float-left div to the messages div
   mL.removeChild(mL.lastChild)
-  mL.appendChild(sectArtDiv)
+  pB.appendChild(sectArtDiv)
 })
 
 window.scraper.onUpdateProgressBar((now, max) => {

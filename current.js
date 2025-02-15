@@ -5,7 +5,7 @@
 // It connects to a remote Chrome instance, which must be logged into nytimes.com to prevent pages from being obscured by a log in prompt.
 // It works with a Tampermonkey userscript (Scrape), installed in the remote Chrome instance, that scrapes articles for recipes and sends the results to the recipe-scraper application via HTTP.
 
-// extension version 2.0.0
+// extension version 2.0.1
 
 // Code structure:
 //
@@ -121,6 +121,8 @@ let page // Puppeteer page
 let lastRandom // Last generated random wait interval
 
 let dateEntered // boolean
+let captchaDisplayed = false
+let pages // Puppeteer pages when captcha is displayed
 
 // Epochs is an array of dates when the Today's Paper format changed
 const Epochs = [Moment('2006-04-02'), // Today's Paper begins with class story divs
@@ -216,7 +218,20 @@ async function requestListener (req, res) {
     // Route the POST data to the appropriate handler function
     switch (postData.ID) {
       case 'artInfo':
+        // Handle an article info object
+        if (captchaDisplayed) {
+          // If a captcha was previously displayed, remove the 'catcha displayed' message
+          global.win.webContents.send('remove-lastMsg')
+          captchaDisplayed = false
+        }
         artInfo(postData)
+        break
+      case 'captcha':
+        // Handle a captcha page
+        global.win.webContents.send('display-msg', 'Captcha displayed')
+        captchaDisplayed = true
+        pages = await browser.pages()
+        await pages[pages.length - 1].bringToFront() // Focus on the last tab
         break
       default:
         Log('In the object POSTed, the value of the ID key: ' + postData.ID + ', was not recognized')
@@ -422,7 +437,7 @@ async function TPscrape (url, epoch) {
 
       promiseObj = Promise.withResolvers() // Create a promise object for use by the HTTP server requestListener
       const articleA = await page.$(artSelector) // Get the article's <a> element
-      await new Promise(resolve => setTimeout(resolve, getRandomInt(4000, 7000, 500))) // Wait a bit to pretend to be human
+      await new Promise(resolve => setTimeout(resolve, getRandomInt(8000, 15000, 750))) // Wait a bit to pretend to be human
 
       // Wait for both a click on the article and the HTTP POST request from the Scrape userscript.
       // A middle click on the article opens the article in a new tab.
@@ -493,7 +508,7 @@ async function TPscrape (url, epoch) {
     // console.log(articles);
 
     // Remove the progress bar div
-    global.win.webContents.send('remove-lastMsg')
+    global.win.webContents.send('remove-msgs', 'progressBar')
 
     // Return array of article objects
     console.log('Exiting sectionScrape')
