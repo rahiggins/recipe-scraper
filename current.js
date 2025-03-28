@@ -1,27 +1,27 @@
 // This module executes the 'current' mode of the recipe-scraper application.  Index.js issues
 //  require for this module.
 
-// recipe-scraper (current) scrapes Today's Paper pages for food articles and scrapes those artcles for recipes
-// It connects to a remote Chrome instance, which must be logged into nytimes.com to prevent pages from being obscured by a log in prompt.
-// It works with a Tampermonkey userscript (Scrape), installed in the remote Chrome instance, that scrapes articles for recipes and sends the results to the recipe-scraper application via HTTP.
+// recipe-scraper (current) remembers the last date processed and displays subsequent dates that have not yet been processed as links. It also offers a date picker to reprocess prior dates.
 
-// extension version 2.0.1
+// When a not yet processed date link is clicked, the application launches a Chrome instance to display the day's Today's Paper page. When subsequent date links are clicked,  the Today's Paper page is opened in a new tab in the previously launched Chrome instance.
+
+// The application works with Tampermonkey userscripts (tpScrap and Scrape), installed in the launched Chrome instance.  Userscript tpScrape is invokfrom a Tampermonkey menu command and scrapes the food section (Food or Magazine) of the Today's Paper page for article titles, authors and URLs. Userscript Scrape scrapes opened articles for recipes. The userscripts send their results to the recipe-scraper application via HTTP.
+
+// The recipe-scraper application formats the information sent by the userscripts as table HTML. It displays the table entries for editing and then adds the entries to the year's index.html file. It also adds the day's entries to the local NYTArticles dagtabase and creates SQL statements to add the entries to the remote NYTArticles database.
+
+// manual click version 3.0.0
 
 // Code structure:
 //
 //  Global variable definitions
 //  Global function definition
-//    function nameDiffersFromURL (via require from artScrape.js)
 //    function Log
 //    function connectPup
-//    function getRandomInt
-//    function requestListener
+//    function getEpoch
 //
-//  function TPscrape
-//   function sectionScrape
-//
-//  function processSelectedArticles
-//    ipcMain.once('submitted')
+//  function requestListener
+//    function addArticles
+//    function artInfo
 //
 //  function updateIndexHTML
 //
@@ -41,49 +41,83 @@
 //      global.win.webContents.send('enable-action-buttons')
 //
 //  function Mainline
-//    function launchPup
 //    http.createServer
 //    server.listen
-//    function addArticles
-//      ipcMain.once('added')
-//      global.win.webContents.send('add-articles')
+//    ipcMain.on('submitted'
+//    ipcMain.on('openTP'
 //    ipcMain.on('process-date')
-//      global.win.webContents.send('add-button')
+//    ipcMain.on('AOT')
+//    new BrowserWindow()
 //
 //   app.on('will-quit')
 
 // Program flow:
 //
 //   Mainline
-//    Connect Puppeteer to a remote Chrome instance
+//    Call getEpoch
 //    Start HTTP server
-//    Listen for a 'process-date' message from current-renderer.js
-//      For each date to be processed
-//      |  Call TPscrape
-//      |    Send 'add-throbber' message to current-renderer.js
-//      |    Call sectionScrape
-//      |       Send 'create-progressbar' message to current-renderer.js
-//      |     For each article in section
-//      |       Call artScrape
-//      |       Send 'update-progressbar' message to current-renderer.js
-//      |     Send 'remove-lastMsg' message to current-renderer.js (remove progress bar)
-//      |  Call addArticles
-//      |  Send 'add-button' message to current-renderer.js
-//      |  Call processSelectedArticles
-//      |  Call dayCompare, if a specific date was entered
-//      |   Call createButton
-//      |   Send 'display-tableCompare' message to current-renderer.js
-//      |   Send 'enable-action-buttons' message to current-renderer.js
-//      |_  Call getAction
+//    Listen for HTTP POST requests
+//      On POST with ID articleInfo (sent by userscript Scrape):
+//        - Call addArticles
+//    Create the mainWindow Browser window
+//    On 'submitted':
+//      Call checkExisting
+//      Call dayCompare
+//        Call createButton
+//        Send 'display-tableCompare' message to current-renderer.js
+//        Send 'enable-action-buttons' message to current-renderer.js
+//        Call getAction
 //      Call updateIndexHTML
 //      Send 'add-continue' message to current-renderer.js
 //      Call processNewDays
 //          Call NewDays
 //      Call Insert
-//      Send 'enable-start' message to current-renderer.js
+//    On 'tpOpen'
+//      Spawn 'open -a "Google Chrome"
+//    On 'process-date'
+//      Call getEpoch
+//      Spawn 'open -a "Google Chrome"
+//    On 'AOT'
+//      Set window 'always on top' property
+
+// Data structures
+//
+// artObj { // Created by the tpScrape userscript
+//  tpTitle: string,
+//  author: string,
+//  tpHref: string,
+//  index: number,
+// }
+//
+// articleArray object { sent via HTTP POST by the tpScrape userscript
+//  ID: 'articleArray',
+//  url: string,
+//  sectionName: string,
+//  articles: [artObj, artObj, ..., artObj]
+// }
+//
+// recipeObj { created by the Scrape userscript
+//  name: string,
+//  link: string,
+//  inconsistency: boolean
+// }
+//
+// artInfo { sent via HTTP POST be the Scrape userscript
+//  ID: 'artInfo',
+//  hasRecipes: boolean,
+//  recipeList: [recipeObj, recipeObj, ..., recipeObj],
+//  titleInfo: {
+//                title: string,
+//                arttype: string,
+//                ATDpresent: string
+//  },
+//  url: string
+// }
+//
+// Key:value pairs in the corresponding artObj object are added to the artInfo object in the requestListener function.
 
 const { NewDays, Insert } = require('./lib.js') // Shared scraper functions
-const { app, ipcMain } = require('electron') // InterProcess Communications
+const { app, ipcMain, BrowserWindow } = require('electron') // InterProcess Communications
 const path = require('path')
 const Moment = require('moment') // Date/time functions
 const fs = require('fs') // Filesystem functions
@@ -91,14 +125,17 @@ const puppeteer = require('puppeteer') // Chrome API
 const needle = require('needle') // Lightweight HTTP client
 const cheerio = require('cheerio') // core jQuery
 const http = require('http') // HTTP protocol
-const GetUniqueSelector = require('cheerio-get-css-selector') // Create a selector
-const { nameDiffersFromURL } = require('./artScrape.js') // Check recipe name against URL
-const { execSync } = require('node:child_process') // Execute shell commands
+const { spawn } = require('node:child_process') // Execute shell commands
 
+const tmrrw = Moment()
+tmrrw.add(1, 'days')
+const tomorrow = tmrrw.format('YYYY-MM-DD') // used in function getEpoch
 const host = 'localhost' // HTTP server host
 const port = 8012 // HTTP server port
-let promiseObj // Object to hold a promise and its resolvers
-let epoch // Today's paper epoch
+let tpObjArray // Array of article objects, sent be the Scrape userscript, referenced in function artInfo
+let tpURL // URL of Today's Paper food section
+let tpDateObj // Moment date derived from tpURL
+let articleInfoObjArray // Array of article info objects composed of objects returned by the tpScrape userscript and the Scrape userscript
 
 let newTableHTML = '' // Generated table HTML is appended to this
 const NYTRecipesPath = '/Users/rahiggins/Sites/NYT Recipes/'
@@ -107,30 +144,18 @@ const URLStartCurrent = 'https://www.nytimes.com/issue/todayspaper/' // Today's 
 const URLStartPast = 'https://www.nytimes.com/indexes/' // Today's Paper URL past prefix
 const URLEndCurrent = '/todays-new-york-times' // Today's Paper URL current suffix
 const URLEndPast = '/todayspaper/index.html' // Today's Paper URL past suffix
-// const today = Moment();
+const today = Moment()
+let saveLastDate = false // Save LastDate.txt only if datesToProcess were automatically generated
+let dateEntered = false // Set to true in 'process-date'
 
 const debug = true
-let url
-let MDY // MM/DD/YYYY
-let YMD // YYYY/MM/DD
-let Day // Sunday | Wednesday
 let sect // Magazine | Food
-let dateRowHTML = '' // Table HTML for date row
 let browser // Puppeteer browser
 let page // Puppeteer page
-let lastRandom // Last generated random wait interval
+let firstArticle = true // true for first article of a date being processed sent by userscript Scrape
 
-let dateEntered // boolean
 let captchaDisplayed = false
 let pages // Puppeteer pages when captcha is displayed
-
-// Epochs is an array of dates when the Today's Paper format changed
-const Epochs = [Moment('2006-04-02'), // Today's Paper begins with class story divs
-  Moment('2010-10-27'), // change to columnGroups
-  Moment('2017-12-24'), // change to <ol>
-  Moment() + Moment.duration(1, 'days')] // tomorrow
-
-const maxEpoch = Epochs.length - 1 // Epochs greater than this are in the future, S.N.O.
 
 // Function definitions
 
@@ -175,48 +200,113 @@ async function connectPup () {
   }
 }
 
-function getRandomInt (min = 5000, max = 25000, gap = 3000) {
-  // Generate a random number of milliseconds between *min* and *max* to be used as
-  //  a delay before accessing nytimes.com pages to avoid being blocked as a robot.
-  // The number generated must be *gap* seconds or more from the previously returned
-  // number, which is contained in the global variable lastRandom
+function getEpoch (date) {
+  // Return the Today's Paper format epoch for the input date
+  // Input: Moment() object or string YYYY-MM-DD
+  // Output: 0 (S.N.O.), 1, 2 or 3
 
-  let random
+  // Epochs is an array of dates when the Today's Paper format changed
+  const Epochs = ['2006-04-02', // Today's Paper begins with class story divs < epoch 0
+    '2010-10-27', // change to columnGroups < epoch 1
+    '2017-12-24', // change to <ol> < epoch 2
+    tomorrow] // current epoch < epoch 3
 
-  // Find a millisecond delay *gap* seconds or more from the last delay
-  do {
-    random = Math.floor(Math.random() * (max - min) + min) // The maximum is exclusive and the minimum is inclusive
-  } while (Math.abs(random - lastRandom) < gap)
-  console.log('Click delay: ' + random.toString() + ' ms')
+  // Ensure the date to test is a YYYY-MM-DD string
+  const thisDate = typeof date === 'object' ? date.format('YYYY-MM-DD') : date
 
-  // Set the found delay as the last delay and return it\
-  lastRandom = random
-  return lastRandom
+  let epoch = 0
+  for (const ep of Epochs) {
+    // For each element of the Epochs array (an epoch begin date) ...
+    if (thisDate < ep) {
+      // If the date to process is prior to this begin date,
+      //  exit loop
+      break
+    } else {
+      // Increment epoch indicator and repeat
+      epoch += 1
+    }
+  }
+  return epoch
 }
 
-// Define the request listener function for the HTTP server
+// Request listener function for the HTTP server
 async function requestListener (req, res) {
+  // Function definitions
+  async function addArticles (artInfoObjString) {
+    // Called from function artInfo
+    // Input is a stringified article info object recieved from the Scrape userscript
+    // Add event listener, wrapped in a Promise, for the 'added' signal from the renderer process.
+    // Send the article info object to the renderer process
+    // Return Promise to the request listener
+
+    console.log('addArticles: entered')
+    return new Promise(function (resolve) {
+      ipcMain.once('added', () => {
+        console.log('addArticles: resolving')
+        resolve() // Resolve Promise
+      })
+
+      // Add designated section article checkbox to current.html
+      global.win.webContents.send('add-articles', artInfoObjString)
+    })
+  }
+
+  // Function to process an article info object received from the Scrape userscript
+  async function artInfo (postObj) {
+    Log('Function artInfo entered for ' + postObj.url)
+    res.setHeader('Content-Type', 'application/json')
+    res.writeHead(200)
+    res.end('{"message": "OK"}')
+
+    // Find the corresponding element of the Today's Paper object array
+    for (const artObj of tpObjArray) {
+      if (artObj.tpHref === postObj.url) {
+        // When found, merge the Today's Paper onject keys in the the article info object received from Scrape
+        Object.assign(postObj, artObj)
+        // If a title could not be found (57 Sandwiches That Define New York City - 6/19/2024), use the article title from the Today's Paper page
+        postObj.titleInfo.title = postObj.titleInfo.title || artObj.tpTitle
+        break
+      }
+    }
+    // Add article info to the articles array ...
+    articleInfoObjArray.push(postObj)
+    if (firstArticle) {
+      firstArticle = false
+      global.win.webContents.send('remove-msgs')
+      const msg = `${sect} section articles for ${tpDateObj.format('dddd')}, ${tpDateObj.format('MM/DD/YYYY')}`
+      global.win.webContents.send('display-msg', msg)
+    }
+    await addArticles(JSON.stringify(postObj))
+  }
+  // End of function definitions
+
   let body = ''
+  // Collect chucnks of the POST data
   req.on('data', function (chunk) {
     body += chunk
   })
 
+  // When all the POST data has beed received ...
   req.on('end', async function () {
     Log('Received POST')
     Log(body)
-    const postData = JSON.parse(body)
+    const postObj = JSON.parse(body)
 
-    // Function to resolve the promise with the article info
-    function artInfo (postObj) {
-      res.setHeader('Content-Type', 'application/json')
-      res.writeHead(200)
-      res.end('{"message": "OK"}')
-      console.log('Resolving promise')
-      promiseObj.resolve(postObj)
-    }
+    // Process the POST data by ID
+    switch (postObj.ID) {
+      case 'articleArray':
+        // Handle an array of article objects
+        tpObjArray = postObj.articles
+        tpURL = postObj.url
+        tpDateObj = Moment(tpURL.replace(/^.*?(\d{4})\/(\d{2})\/(\d{2}).*$/, '$2/$3/$1'), 'MM/DD/YYYY')
+        sect = postObj.sectionName
+        articleInfoObjArray = []
+        res.setHeader('Content-Type', 'application/json')
+        res.writeHead(200)
+        res.end('{"message": "OK"}')
+        global.win.webContents.send('remove-msgs')
+        break
 
-    // Route the POST data to the appropriate handler function
-    switch (postData.ID) {
       case 'artInfo':
         // Handle an article info object
         if (captchaDisplayed) {
@@ -224,8 +314,9 @@ async function requestListener (req, res) {
           global.win.webContents.send('remove-lastMsg')
           captchaDisplayed = false
         }
-        artInfo(postData)
+        artInfo(postObj)
         break
+
       case 'captcha':
         // Handle a captcha page
         global.win.webContents.send('display-msg', 'Captcha displayed')
@@ -233,370 +324,35 @@ async function requestListener (req, res) {
         pages = await browser.pages()
         await pages[pages.length - 1].bringToFront() // Focus on the last tab
         break
+
       default:
-        Log('In the object POSTed, the value of the ID key: ' + postData.ID + ', was not recognized')
+        Log('In the object POSTed, the value of the ID key: ' + postObj.ID + ', was not recognized')
         res.setHeader('Content-Type', 'application/json')
         res.writeHead(501)
-        res.end(`{"message": "In the object POSTed, the value of the ID key: ${postData.ID}, was not recognized"}`)
+        res.end(`{"message": "In the object POSTed, the value of the ID key: ${postObj.ID}, was not recognized"}`)
     }
   })
 }
 
-async function TPscrape (url, epoch) {
-  // Called from Mainline
-  // Input is URL of Today's Paper section and
-  //          Today's Paper format epoch indicator (1, 2 or 3)
-  //
-  // Retrieve Today's Paper page
-  // Call sectionScrape to extract articles from Todays Paper section {Wednesday: food, Sunday: magazine}
-  // For each article, call artScrape to scrape article for title and recipes
-  // and return array of article objects = [ {title:, author:, href:, hasRecipes, html:}, ...]
-
-  console.log('TPscrape: entered for ' + url)
-  const anch = url.split('#') // ["Today's Paper url", "section name"]
-  Log('anch: ' + anch)
-  // let prot
-  // let hostnm
-  // Add activity description to index.html
-  const msg = "Retrieving Today's Paper page for " + Day + ', ' + MDY
-  global.win.webContents.send('display-msg', msg)
-
-  async function sectionScrape ($, prot, hostnm) {
-    // Called from TPscrape
-    // Input:
-    //  - a Cheerio object containing Today's Paper page HTML
-    //  - the protocol portion of the page's URL
-    //  - the hostname portion of the page's URL
-    //
-    // Find the section that contains food articles, then ...
-    // For each article in the designated section:
-    //  Create an article object {title:, author:, href:}
-    //  Call artScrape to get { hasRecipes:, html:}
-    //  Add hasRecipes: and html: to article object
-    //  Push article object onto array of article objects
-    // Return array of article objects [{title:, author:, href:, hasRecipes:, html: } ...]
-
-    Log('Entering sectionScrape')
-    Log('Epoch: ' + epoch.toString())
-
-    const articles = [] // Array of article objects, value returned by sectionScrape
-    let sh // div.section-headline element in epoch 1
-
-    // Define names of sections that contain food articles
-    const sectionNames = ['magazine', 'food', 'dining', 'diningin,diningout']
-
-    // Find an <a> element whose name belongs to the sectionNames array of
-    //  sections containing food articles
-    const an = $('a').filter(function () {
-      const name = $(this).attr('name')
-      if (name === undefined) {
-        return false
-      } else {
-        return sectionNames.includes(name.replace(/\s/g, '').toLowerCase())
-      }
-    })
-
-    if (epoch === 1) {
-      // For the first epoch, find the <a> element's parent whose
-      //  class name is "section-headline"
-      sh = $(an).parents().filter(function () {
-        return $(this).attr('class') === 'section-headline'
-      })
-    }
-
-    // console.log("Number of anchors: " + an.length.toString())
-
-    // Set section name from the identified <a> element
-    sect = $(an).attr('name')
-    Log('Section name: ' + sect)
-
-    // Cheerio object containing article elements, set in the following
-    //  switch block
-    let arts
-    let sectionList
-    let colGroupParent
-    let sib
-
-    switch (epoch) {
-      case 3:
-
-        //
-        sectionList = $(an).siblings('ol') // ordered list following section
-        Log('Number of lists: ' + sectionList.length.toString())
-        arts = $(sectionList).children('li') // list items (articles) of ordered list following section
-        // console.log("Number of articles: " + arts.length.toString());
-        break
-
-      case 2:
-
-        colGroupParent = $(an).parents().filter(function () {
-          return $(this).attr('class') === 'columnGroup'
-        })
-        Log('colGroupParent length: ' + colGroupParent.length.toString())
-
-        arts = $('li', colGroupParent)
-        break
-
-      case 1:
-
-        sib = $(sh).next()
-        do {
-          arts = $(arts).add(sib)
-          console.log('Sib: ' + $('a', sib).text())
-          sib = $(sib).next()
-        } while ($(sib).attr('class') !== 'jumptonavbox')
-        break
-    }
-    Log('Number of articles: ' + arts.length.toString())
-
-    const barLabel = 'Retrieving ' + arts.length.toString() + ' ' + sect + ' section articles for ' + Day + ', ' + MDY
-    global.win.webContents.send('create-progressbar', arts.length, barLabel)
-
-    for (let a = 0; a < arts.length; a++) {
-      // For each article, create an article object (artObj)
-
-      let artObj // Article object, appended to articles array
-      let tpTitle
-      let author
-      let h2
-      let tpHref
-      let byLine
-      let shlAuthor
-      const link = $(arts[a]).find('a') // Hyperlink to article
-      const artSelector = $(link).getUniqueSelector() // Selector for article <a> element
-      console.log('Article selector: ' + artSelector)
-
-      // According to epoch, collect title, href and author. Create artObj.
-      switch (epoch) {
-        case 3:
-          h2 = $(link).find('h2')
-          Log('Article title: ' + $(h2).text())
-          tpHref = $(link).attr('href')
-          if (!tpHref.startsWith('https')) {
-            // 12/4/2024 - You Might Be Storing Cheese All
-            tpHref = prot + '//' + hostnm + tpHref
-          }
-          Log('Article href: ' + tpHref)
-          author = $(arts[a]).find('span.css-1n7hynb')
-          Log('Author: ' + author.text())
-          artObj = { // create an article object
-            tpTitle: $(h2).text(),
-            author: $(author).text(),
-            tpHref
-          }
-          break
-
-        case 2:
-          tpTitle = $(link).text().trim()
-          Log('Title: ' + tpTitle)
-          tpHref = $(link).attr('href')
-          if (!$(link).attr('href').startsWith('http')) {
-            tpHref = prot + '://' + hostnm + $(link).attr('href')
-          }
-          tpHref = tpHref.split('?')[0]
-          Log('href: ' + tpHref)
-          byLine = $(arts[a]).find('div.byline')
-          if (byLine.length > 0) {
-            author = $(arts[a]).find('div.byline').text().split(/By|by/)[1].trim()
-          } else {
-            author = ''
-          }
-          Log('Author: ' + author)
-          artObj = { // create an article object
-            tpTitle,
-            author,
-            tpHref
-          }
-          break
-
-        case 1:
-          tpTitle = $(link).text()
-          Log('Title: ' + tpTitle)
-          tpHref = $(link).attr('href').replace('events', 'www')
-          console.log('Href: ' + tpHref)
-          shlAuthor = $(arts[a]).find('div.storyheadline-author')
-          if (shlAuthor.length > 0 & $(shlAuthor).text().match(/by/i) != null) {
-            author = $(shlAuthor).text().split(/By|by/)[1].trim()
-          } else {
-            author = ''
-          }
-          Log('Author: ' + author)
-          artObj = { // create an article object
-            tpTitle,
-            author,
-            tpHref
-          }
-          break
-      }
-
-      // Remove any search string from the article's URL
-      const urlObj = new URL(artObj.tpHref)
-      if (urlObj.pathname.includes('todayspaper')) continue
-      urlObj.search = ''
-      artObj.tpHref = urlObj.href
-
-      promiseObj = Promise.withResolvers() // Create a promise object for use by the HTTP server requestListener
-      const articleA = await page.$(artSelector) // Get the article's <a> element
-      await new Promise(resolve => setTimeout(resolve, getRandomInt(8000, 15000, 750))) // Wait a bit to pretend to be human
-
-      // Wait for both a click on the article and the HTTP POST request from the Scrape userscript.
-      // A middle click on the article opens the article in a new tab.
-      // The POST request data is in the second element of the array returned by Promise.all
-      const promiseAllResult = await Promise.all([articleA.click({ button: 'middle' }), promiseObj.promise])
-      Object.assign(artObj, promiseAllResult[1]) // Add values returned by the userscript to the article object (artObj)
-
-      let i = 0
-      for (const recipe of artObj.recipeList) {
-        // For each recipe's URL,Look for redirects from www.nytimes.com
-        //  to cooking.nytimes.com.  If found, replace the recipe's
-        //  www.nytimes.com URL with the cooking.nytimes.com URL
-        //  e.g. https://www.nytimes.com/2009/01/21/dining/211prex.html
-        if (recipe.link.includes('www.nytimes.com')) {
-          const resp = await needle('head', recipe.link)
-          if (resp.statusCode >= 300 && resp.statusCode < 400) {
-            const sym = Object.getOwnPropertySymbols(resp).find(
-              (s) => s.description === 'kHeaders'
-            )
-            console.log(resp[sym].location)
-            if (resp[sym].location.includes('cooking.nytimes.com')) {
-              Log('Redirect: ' + recipe.link + ' => ' + resp[sym].location)
-              artObj.recipeList[i].link = resp[sym].location
-            }
-          }
-        }
-        i += 1
-      }
-
-      i = 0 // recipeList array index
-      for (const recipe of artObj.recipeList) {
-        // For each recipe with a name/URL inconsistency, look for a redirect
-        if (recipe.inconsistency) {
-          Log(`Recipe ${recipe.name} is inconsistent`)
-          const effectiveURL = await execSync(`curl ${recipe.link} -s -L -I -o /dev/null -w '%{url_effective}'`).toString()
-          Log(`Effective URL: ${effectiveURL}`)
-          if (recipe.link !== effectiveURL && !nameDiffersFromURL(recipe.name, effectiveURL)) {
-            // If the redirected URL fixes the inconsistency ...
-            artObj.recipeList[i].link = effectiveURL
-            artObj.recipeList[i].inconsistency = false
-          }
-        }
-        i += 1
-      }
-
-      // Create article table row
-      // If a title could not be found (57 Sandwiches That Define New York City - 6/19/2024), use the article title from the Today's Paper page
-      let tableHTML = ''
-      tableHTML = tableHTML + '              <tr>\n                <td><br>\n                </td>\n                <td>' + artObj.titleInfo.arttype + '\n'
-      tableHTML = tableHTML + '                </td>\n                <td><a href="'
-      tableHTML = tableHTML + artObj.url + '">' + (artObj.titleInfo.title || artObj.tpTitle) + '</a>' + artObj.titleInfo.ATDPresent + '</td>\n              </tr>\n'
-
-      const inconsistent = '<span class="inconsistent">inconsistent name: </span>'
-      for (const recipe of artObj.recipeList) {
-        const recipeName = recipe.inconsistency ? inconsistent + recipe.name : recipe.name
-        tableHTML = tableHTML + '              <tr>\n                <td><br>\n                </td>\n                <td>recipe\n'
-        tableHTML = tableHTML + '                </td>\n                <td><a href="'
-        tableHTML = tableHTML + recipe.link + '">' + recipeName + '</a></td>\n              </tr>\n'
-      }
-      artObj.html = tableHTML
-
-      // Append this article's artObj to the array returned
-      articles.push(artObj)
-
-      // Update progress bar
-      global.win.webContents.send('update-progressbar', a + 1, arts.length)
-    }
-    // console.log(articles);
-
-    // Remove the progress bar div
-    global.win.webContents.send('remove-msgs', 'progressBar')
-
-    // Return array of article objects
-    console.log('Exiting sectionScrape')
-    return articles
-  }
-
-  // Add a throbber icon while retrieving the Today's Paper page
-  global.win.webContents.send('add-throbber')
-
-  // Go to Today's Paper page via puppeteer
-  Log('Going to page')
-  await page.goto(anch[0])
-  Log('Back with page')
-  // Get location protocol and host name for use in artScrape function
-  const urlParts = await page.evaluate(() => {
-    const results = []
-    results.push(window.location.protocol)
-    results.push(window.location.host)
-    results.push(window.location.href)
-    results.push(window.location.hostname)
-    results.push(window.location.pathname)
-    return results
-  })
-  const prot = urlParts[0]
-  const hostnm = urlParts[1]
-  Log('urlParts: ' + prot + ' ' + hostnm)
-  Log('w.l.href: ' + urlParts[2])
-  Log('w.l.hostname: ' + urlParts[3])
-  Log('w.l.pathname: ' + urlParts[4])
-  // Retrieve page html and call sectionScrape to extract articles
-  const html = await page.content()
-  const $ = cheerio.load(html)
-  GetUniqueSelector.init($) // Initialize the GetUniqueSelector library
-  const scrape = await sectionScrape($, prot, hostnm)
-  // console.log("TPscrape: sectionScrape output - " + JSON.stringify(scrape[0]));
-  // console.log(scrape)
-  console.log('TPscrape: exiting  for ' + url)
-  return scrape // array of article objects - [{title:, author:, href:, hasRecipes:, html:}, ...]
-}
-
-async function processSelectedArticles (arr) {
-  // Called from Mainline
-  // Input is array of article objects returned by TPscrape
-  // Add event listener, wrapped in a Promise, for the Next/Save button that was added by addArticles
-  // Return Promise to Mainline
-  //
-  // On click of Next/Save button, for each checked article:
-  //  append table HTML to newTableHTML
-  //
-  console.log('processSelectedArticles: entered')
-  return new Promise(function (resolve) {
-    ipcMain.once('submitted', (evt, checkedArticleIndicesString) => {
-      const checkedArticleIndices = JSON.parse(checkedArticleIndicesString)
-      if (checkedArticleIndices.length > 0) { // If any articles were checked, append date row table HTML
-        newTableHTML += dateRowHTML
-        // fs.appendFileSync(output, dateRowHTML, "utf8");  // (diagnostic)
-      }
-
-      // For each checked article, append its table HTML
-      for (let j = 0; j < checkedArticleIndices.length; j++) {
-        const artHTML = arr[checkedArticleIndices[j]].html
-        newTableHTML += artHTML // Append table HTML
-        // fs.appendFileSync(output, artHTML);  // (diagnostic)
-      }
-      console.log('processSelectedArticles: resolving')
-      resolve() // Resolve Promise
-    })
-  })
-}
-
-function updateIndexHTML (dates) {
+function updateIndexHTML (date, year) {
   // Called from Mainline
   // Input: [Moment(first date), Moment(last date)]
   // Returns: true if update performed, false otherwise
   // Replace empty table rows in ~/Sites/NYT Recipes/yyyy/index.html corresponding with new days' table HTML
 
   // let errmsg; // Error message
-  const year = dates[0].format('YYYY')
-  const tablePath = NYTRecipesPath + year + '/index.html'
+  // const year = dates[0].format('YYYY')
+  const tablePath = path.join(NYTRecipesPath, year, 'index.html')
   const table = fs.readFileSync(tablePath, 'UTF-8').toString() // Read year page
   // const newTableHTML = fs.readFileSync(output, "UTF-8").toString();   // Read new table HTML created by this app (diagnostic)
   const tableLastIndex = table.length - 1
 
   // Find beginning date
   console.log('Finding start of replace')
-  const startDateIndex = table.indexOf(dates[0].format('MM/DD/YYYY'))
+  const startDateIndex = table.indexOf(date)
   if (startDateIndex === -1) {
-    console.error('updateIndexHTML: first date ' + dates[0].format('MM/DD/YYYY') + ' not found in index.html')
+    // console.error('updateIndexHTML: first date ' + dates[0].format('MM/DD/YYYY') + ' not found in index.html')
+    console.error('updateIndexHTML: first date ' + date + ' not found in index.html')
     return false
   }
   // console.log("startDateIndex: " + startDateIndex.toString());
@@ -609,7 +365,7 @@ function updateIndexHTML (dates) {
     trEndBeforeStartDateIndex = table.lastIndexOf('<tbody>', startDateIndex)
   }
   if (trEndBeforeStartDateIndex === -1) {
-    console.error('updateIndexHTML: unable to find </tr> or <tbody> preceding ' + dates[0].format('MM/DD/YYYY'))
+    console.error('updateIndexHTML: unable to find </tr> or <tbody> preceding ' + date)
     return false
   }
   console.log('trEndBeforeStartDateIndex: ' + trEndBeforeStartDateIndex.toString())
@@ -629,9 +385,9 @@ function updateIndexHTML (dates) {
   // console.log("updateIndexHTML: replaceStartIndex: " + replaceStartIndex.toString());
 
   // Find the ending date
-  const endDateIndex = table.indexOf(dates[1].format('MM/DD/YYYY'))
+  const endDateIndex = table.indexOf(date)
   if (endDateIndex === -1) {
-    console.error('updateIndexHTML: last date ' + dates[1].format('MM/DD/YYYY') + ' not found in index.html')
+    console.error('updateIndexHTML: last date ' + date + ' not found in index.html')
     return false
   }
   console.log('endDateIndex: ' + endDateIndex.toString())
@@ -643,13 +399,13 @@ function updateIndexHTML (dates) {
     nextDateAfterEndDateIndex = table.indexOf('</tbody', endDateIndex)
     console.log('nextDateAfterEndDateIndex indexOf result: ' + nextDateAfterEndDateIndex.toString())
     if (nextDateAfterEndDateIndex === -1) {
-      console.error('updateIndexHTML: unable to find MM/DD/YYYY or </tbody following ' + dates[1].format('MM/DD/YYYY'))
+      console.error('updateIndexHTML: unable to find MM/DD/YYYY or </tbody following ' + date)
       return false
     }
   } else {
     nextDateAfterEndDateIndex = nextDateAfterEndDateIndex + endDateIndex + 10
   }
-  console.log('updateIndexHTML: MM/DD/YYYY or </tbody following ' + dates[1].format('MM/DD/YYYY') + ': ' + nextDateAfterEndDateIndex.toString())
+  console.log('updateIndexHTML: MM/DD/YYYY or </tbody following ' + date + ': ' + nextDateAfterEndDateIndex.toString())
 
   // Find the </tr> element preceeding the next date or </tbody>
   const trEndBeforeNextDateAfterEndDateIndex = table.lastIndexOf('</tr>', nextDateAfterEndDateIndex)
@@ -698,16 +454,16 @@ async function processNewDays (yyyy) {
 function checkExisting (date) {
   // See if table HTML for the input date already exists in
   //  NYTRecipesPath + YYYY + '/Days/YYYY-MM-DD.txt'
-  // Input: a Moment object for the date under consideration
+  // Input: the date under consideration in MM/DD/YYYY format
   // Output: {
   //           exists: boolean,
   //           existingHTML: string
   //         }
-  console.log('checkExisting entered, date: ' + date.format('YYYY-MM-DD'))
+  console.log('checkExisting entered, date: ' + date)
 
-  const yyyy = date.format('YYYY')
-  const dashesYMD = date.format('YYYY-MM-DD')
-  const dayPath = NYTRecipesPath + yyyy + '/Days/' + dashesYMD + '.txt'
+  const yyyy = date.substring(6)
+  const dashesYMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2')
+  const dayPath = path.join(NYTRecipesPath, yyyy, 'Days', dashesYMD + '.txt')
   Log('dayPath: ' + dayPath)
   const dayExists = fs.existsSync(dayPath)
   Log('dayExists: ' + dayExists)
@@ -1108,207 +864,107 @@ async function dayCompare (newTable, oldTable) {
 
 // Mainline function
 async function Mainline () {
-  console.log('Entered Mainline, awaiting Puppeteer launch')
+  console.log('Entered Mainline')
 
   // Construct path to last-date-processed file
   const lastDateFile = path.join(app.getPath('appData'), app.getName(), 'LastDate.txt')
   console.log('lastDateFile: ' + lastDateFile)
 
-  // Connect to a remote instance of Chrome and create a new tab in which to navigate to nytimes.com pages
-  await connectPup()
-  page = await browser.newPage()
-  page.setDefaultNavigationTimeout(0) // Make the navigation timeout unlimited
-  await page.setViewport({
-    width: 1400,
-    height: 900,
-    deviceScaleFactor: 1
-  })
+  // See if there are new dates to process
+  const datesToProcess = [] // Array of Moment dates
+  const displayDates = [] // Array of <li><a> elements
+  const lastDate = Moment(fs.readFileSync(lastDateFile, 'utf8'), 'MM-DD-YYYY') // last date processed
+  const maxPickableDate = lastDate.format('YYYY-MM-DD')
+  let bumps
+  if (lastDate.day() === 0) { // If last was Sunday,
+    bumps = [3, 4] //  next is Wednesday (+3), then Sunday (+4)
+  } else { // If last was Wednesday,
+    bumps = [4, 3] //  next is Sunday (+4), then Wednesday (+3)
+  }
+  const swtch = [1, 0] // bumps toggle
+  let s = 0 // Start with the index of the first bump
+  let nextDate = lastDate.add(bumps[s], 'days') // nextDate after LastDate processed
+  while (nextDate <= today) {
+    datesToProcess.push(Moment(nextDate)) // Moment() clones nextDate
+    const epoch = getEpoch(nextDate)
 
-  // Create an HTTP server to receive POST requests from the Scrape userscript
+    // MDY = nextDate.format('MM/DD/YYYY')
+    const YMD = nextDate.format('YYYY/MM/DD')
+    // Day = nextDate.format('dddd')
+    let url // URL of the Today's Paper page
+
+    // Set Today's Paper URL according to epoch
+    switch (epoch === 3) {
+      case true: // Current epoch
+        url = `${URLStartCurrent}${YMD}${URLEndCurrent}`
+        break
+
+      case false: // Prior epochs
+        url = `${URLStartPast}${YMD}${URLEndPast}`
+        break
+    }
+
+    // Add HTML for a listitem containing a link to the Today's Paper page to the displayDates array
+    const dateA = `<li><a href="${url}">${nextDate.format('ddd, MMM DD')}</a></li>`
+    displayDates.push(dateA)
+
+    s = swtch[s] // use the index for the other bump for the next date
+    nextDate = nextDate.add(bumps[s], 'days') // Increment nextDate
+  }
+  if (datesToProcess.length > 0) {
+    // If there are dates to process, update lastDate.txt
+    saveLastDate = true
+  }
+
+  // Create an HTTP server to receive POST requests from the tpScrape and Scrape userscripts
   const server = http.createServer(requestListener)
   server.listen(port, host, () => {
     console.log(`Server is running on http://${host}:${port}`)
   })
 
-  async function addArticles (arrString) {
-    // Called from Mainline
-    // Input is a stringified array of the article objects returned by TPscrape
-    // Add event listener, wrapped in a Promise, for the Next/Save button that was added by addArticles
-    // Return Promise to Mainline
-    //
-    // On click of Next/Save button, for each checked article:
-    //  append table HTML to newTableHTML
-    //
-    console.log('addArticles: entered')
-    return new Promise(function (resolve) {
-      ipcMain.once('added', () => {
-        console.log('addArticles: resolving')
-        resolve() // Resolve Promise
+  ipcMain.on('submitted', async (evt, checkedArticleIndicesString) => {
+    // When the 'Submit' button is clicked, ...
+    const checkedArticleIndices = JSON.parse(checkedArticleIndicesString)
+    Log('checkedArticleIndices: ' + checkedArticleIndices)
+    if (checkedArticleIndices.length > 0) {
+      // If any articles were checked, create table HTML for the date being processed
+      const tpDate = tpDateObj.format('MM/DD/YYYY')
+      const tpYear = tpDate.substring(6)
+      const inconsistent = '<span class="inconsistent">inconsistent name: </span>'
+      newTableHTML = '              <tr>\n                <td class="date"><a href="' + tpURL + '">'
+      newTableHTML += tpDate + '</a></td>\n'
+      newTableHTML += '                <td class="type"><br>\n'
+      newTableHTML += '                </td>\n                <td class="name"><br>\n'
+      newTableHTML += '                </td>\n              </tr>\n'
+      checkedArticleIndices.forEach((idx) => {
+        const artObj = articleInfoObjArray.filter((el) => el.index === idx)[0]
+        newTableHTML += '              <tr>\n                <td><br>\n                </td>\n                <td>' + artObj.titleInfo.arttype + '\n'
+        newTableHTML += '                </td>\n                <td><a href="'
+        newTableHTML += artObj.url + '">' + artObj.titleInfo.title + '</a>' + artObj.titleInfo.ATDPresent + '</td>\n              </tr>\n'
+
+        for (const recipe of artObj.recipeList) {
+          const recipeName = recipe.inconsistency ? inconsistent + recipe.name : recipe.name
+          newTableHTML += '              <tr>\n                <td><br>\n                </td>\n                <td>recipe\n'
+          newTableHTML += '                </td>\n                <td><a href="'
+          newTableHTML += recipe.link + '">' + recipeName + '</a></td>\n              </tr>\n'
+        }
       })
+      console.log('Created HTML for ' + tpDate)
 
-      // Add designated section article checkboxes to current.html
-      const desc = `${sect} section articles for ${Day}, ${MDY}` // Articles description to be displayed
-      global.win.webContents.send('add-articles', arrString, desc)
-    })
-  }
-
-  ipcMain.on('process-date', async (event, enteredDate) => {
-    console.log('current.js - date: ' + enteredDate)
-    const today = new Date()
-    const datesToProcess = [] // array of dates (Moment objects) to process
-    let saveLastDate = false // Save LastDate.txt only if datesToProcess were automatically generated
-    let msg
-    let bumps = [] // Increments to next day: [3, 4] from Sunday or [4, 3] from Wednesday
-
-    // Check if a date was entered
-    if (enteredDate === '') {
-      // If no date was entered, get the last processed date and
-      //  calculate the days to be processedlastDateFile
-      dateEntered = false
-      const lastDate = Moment(fs.readFileSync(lastDateFile, 'utf8'), 'MM-DD-YYYY')
-      if (lastDate.day() === 0) { // If last was Sunday,
-        bumps = [3, 4] //  next is Wednesday (+3), then Sunday (+4)
-      } else { // If last was Wednesday,
-        bumps = [4, 3] //  next is Sunday (+4), then Wednesday (+3)
-      }
-      const swtch = [1, 0] // bumps toggle
-      let s = 0
-      let nextDate = lastDate.add(bumps[s], 'days') // nextDate after LastDate processed
-      while (nextDate <= today) {
-        datesToProcess.push(Moment(nextDate)) // Moment() clones nextDate
-        s = swtch[s]
-        nextDate = nextDate.add(bumps[s], 'days') // Increment nextDate
-      }
-      if (datesToProcess.length > 0) {
-        saveLastDate = true
-      }
-    } else {
-      // Otherwise, process only the entered date
-      dateEntered = true
-      datesToProcess.push(Moment(enteredDate))
-    }
-
-    let datesToProcessRange = []
-    if (datesToProcess.length > 0) {
-      datesToProcessRange = [datesToProcess[0], datesToProcess[datesToProcess.length - 1]]
-      console.log('datesToProcessRange: ' + datesToProcessRange[0].format('MM/DD/YYYY') + ', ' + datesToProcessRange[1].format('MM/DD/YYYY'))
-    }
-
-    // Add "Processing" dates message to index.html
-    let processDates = true // Assume there will be dates to process
-    switch (datesToProcess.length) {
-      case 0:
-        msg = 'No new dates to process'
-        processDates = false // Assumption wrong, there are no dates to process
-        break
-      case 1:
-        msg = 'Processing ' + datesToProcessRange[0].format('MM/DD/YYYY')
-        break
-      case 2:
-        msg = 'Processing ' + datesToProcessRange[0].format('MM/DD/YYYY') + ' and ' + datesToProcessRange[1].format('MM/DD/YYYY')
-        break
-      default:
-        msg = 'Processing ' + datesToProcessRange[0].format('MM/DD/YYYY') + ' through ' + datesToProcessRange[1].format('MM/DD/YYYY')
-    }
-    global.win.webContents.send('display-msg', msg)
-
-    if (processDates) { // If there are dates to process ...
+      // If a date was entered and table HTML for that date already exists, compare the two HTMLs
       let checkExistingResult
       let compareResult
-      const lastDateToProcess = datesToProcess.length - 1
-      for (let i = 0; i < datesToProcess.length; i++) {
-        // For each date to be processed:
-
-        // Establish Today's Paper format epoch: 1, 2 or 3, where 3 is the current epoch
-        epoch = 0 // Initialize the epoch indicator
-        for (const el in Epochs) {
-          // For each element of the Epochs array (an epoch begin date) ...
-
-          if (datesToProcess[i] < Epochs[el]) {
-            // If the date to process is prior to this begin date,
-            //  exit loop
-            break
-          } else {
-            // Increment epoch indicator and repeat
-            epoch++
-          }
+      let msg
+      if (dateEntered) {
+        checkExistingResult = checkExisting(tpDate)
+        if (checkExistingResult.exists) {
+          compareResult = await dayCompare(newTableHTML, checkExistingResult.existingHTML)
+          Log('Action returned: ' + compareResult.action)
+          Log('HTML returned: ' + compareResult.mergedHTML)
         }
-
-        if (epoch === 0 | epoch > maxEpoch) {
-          console.log("Date out of Today's Paper range")
-          return
-        } else {
-          console.log('Epoch ' + epoch.toString())
-        }
-
-        MDY = datesToProcess[i].format('MM/DD/YYYY')
-        YMD = datesToProcess[i].format('YYYY/MM/DD')
-        Day = datesToProcess[i].format('dddd')
-
-        // Set Today's Paper URL according to epoch
-        switch (epoch === 3) {
-          case true: // Current epoch
-            url = `${URLStartCurrent}${YMD}${URLEndCurrent}`
-            break
-
-          case false: // Prior epochs
-            url = `${URLStartPast}${YMD}${URLEndPast}`
-            break
-        }
-
-        // Call TPscrape to retrieve designated section articles
-        console.log('Mainline: awaiting TPscrape for ' + i.toString() + ' ' + url)
-        console.log('sect: ' + sect)
-        const artsArray = await TPscrape(url, epoch)
-        console.log('Mainline: returned from TPscrape for ' + i.toString() + ' calling addArticles')
-        console.log('sect: ' + sect)
-
-        // Create date table row - write to disk in processSelectedArticles
-        dateRowHTML = '              <tr>\n                <td class="date"><a href="' + url + '#' + sect + '">'
-        dateRowHTML = dateRowHTML + MDY + '</a></td>\n'
-        dateRowHTML = dateRowHTML + '                <td class="type"><br>\n'
-        dateRowHTML = dateRowHTML + '                </td>\n                <td class="name"><br>\n'
-        dateRowHTML = dateRowHTML + '                </td>\n              </tr>\n'
-
-        // Add designated section article checkboxes to index.html
-        await addArticles(JSON.stringify(artsArray))
-
-        // Add a Next/Save submit button to index.html
-        let buttonText
-        if (i < lastDateToProcess) {
-          buttonText = 'Next'
-        } else {
-          if (dateEntered) {
-            buttonText = 'Continue'
-          } else {
-            buttonText = 'Save'
-          }
-        }
-        global.win.webContents.send('add-button', buttonText)
-
-        // Add Next/Save button EventListener and after submit, process checked articles
-        console.log('Mainline: awaiting processSelectedArticles')
-        await processSelectedArticles(artsArray)
-        console.log('Mainline: returned from processSelectedArticles')
-
-        // If a date was entered, see if table HTML already exists
-        if (dateEntered) {
-          checkExistingResult = checkExisting(datesToProcess[i])
-          if (checkExistingResult.exists) {
-            compareResult = await dayCompare(newTableHTML, checkExistingResult.existingHTML)
-            Log('Action returned: ' + compareResult.action)
-            Log('HTML returned: ' + compareResult.mergedHTML)
-          }
-        }
-
-        // Repeat for next date to be processed
       }
 
-      // Store LastDate processed
-      if (saveLastDate) {
-        fs.writeFileSync(lastDateFile, MDY, 'utf8')
-      }
-
+      let updateHTML = true
       if (dateEntered && checkExistingResult.exists) {
         console.log('Date was entered and has existing table HTML')
         console.log('Action: ' + compareResult.action)
@@ -1317,7 +973,7 @@ async function Mainline () {
           case 'None':
             msg = 'An identical set of table rows already exists'
             global.win.webContents.send('display-msg', msg)
-            datesToProcessRange = []
+            updateHTML = false
             newTableHTML = '' // Reset newTableHTML
             break
 
@@ -1325,7 +981,7 @@ async function Mainline () {
             global.win.webContents.send('remove-lastMsg')
             msg = 'Changes discarded, existing table rows retained'
             global.win.webContents.send('display-msg', msg)
-            datesToProcessRange = []
+            updateHTML = false
             newTableHTML = '' // Reset newTableHTML
             break
 
@@ -1343,9 +999,8 @@ async function Mainline () {
         }
       }
 
-      // Call updateIndexHTML to add new table rows to ~/Sites/NYT Recipes/{yyyy}/index.html
-      if (datesToProcessRange.length > 0) {
-        if (updateIndexHTML(datesToProcessRange)) {
+      if (updateHTML) {
+        if (updateIndexHTML(tpDate, tpYear)) {
           console.log('Mainline: index.html updated')
           newTableHTML = '' // Reset newTableHTML
 
@@ -1354,7 +1009,7 @@ async function Mainline () {
 
           // Call processNewDays to wait for 'Continue' submitted, and then look for new and changed days
           console.log('Mainline: awaiting processNewDays')
-          await processNewDays(datesToProcessRange[0].format('YYYY'))
+          await processNewDays(tpYear)
           console.log('Mainline: returned from processNewDays')
 
           // Call Insert to insert/update new and changed days in local database
@@ -1367,18 +1022,101 @@ async function Mainline () {
           global.win.webContents.send('display-msg', msg)
           global.win.webContents.openDevTools() // Open Developer Tools; displays error logging
         }
+
+        // Store LastDate processed and tell the renderer process to update the max pickable date
+        if (saveLastDate) {
+          fs.writeFileSync(lastDateFile, tpDate, 'utf8')
+          global.win.webContents.send('update-maxdate', tpDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2'))
+        }
       }
     }
-    console.log('Mainline: enable Start button')
-    global.win.webContents.send('enable-start') // Enable the Start button
   })
+
+  ipcMain.on('openTP', (evt, url) => {
+    // When a Today's Paper page link is clicked, open the page in Google Chrome
+    console.log('openTP: ' + url)
+    const subp = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--no-first-run', '--no-default-browser-check', '--user-data-dir=/Users/rahiggins/Library/Application Support/Google/Chrome/Remote', '--remote-debugging-port=9222', url], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    subp.unref()
+    firstArticle = true // The next artInfo object received will be the first article
+    dateEntered = false // The date was not selected from the date picker
+  })
+
+  ipcMain.on('process-date', async (event, enteredDate) => {
+    // When a date is selected from the date picker, ...
+    console.log('current.js - date: ' + enteredDate)
+    const dateToProcess = Moment(enteredDate, 'YYYY-MM-DD')
+    dateEntered = true
+    firstArticle = true
+
+    const epoch = getEpoch(dateToProcess)
+
+    // MDY = dateToProcess.format('MM/DD/YYYY')
+    const YMD = dateToProcess.format('YYYY/MM/DD')
+    // Day = dateToProcess.format('dddd')
+    let url
+
+    // Set Today's Paper URL according to epoch
+    switch (epoch === 3) {
+      case true: // Current epoch
+        url = `${URLStartCurrent}${YMD}${URLEndCurrent}`
+        break
+
+      case false: // Prior epochs
+        url = `${URLStartPast}${YMD}${URLEndPast}`
+        break
+    }
+    console.log('process-date: ' + url)
+
+    // Open the selected date's Today's Paper page in  Google Chrome
+    const subp = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--no-first-run', '--no-default-browser-check', '--user-data-dir=/Users/rahiggins/Library/Application Support/Google/Chrome/Remote', '--remote-debugging-port=9222', url], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    subp.unref()
+  })
+
+  ipcMain.on('AOT', (event, arg) => {
+    // Set or unset the window's Always On Top property
+    Log('AOT entered with ' + arg)
+    global.win.setAlwaysOnTop(arg)
+  })
+
+  // Create the browser window, passing the dates to process array and the last processed date to preload.js
+  global.win = new BrowserWindow({
+    x: 29,
+    y: 46,
+    width: 900,
+    // width: 1500,  // for devTools
+    height: 675,
+    webPreferences: {
+      additionalArguments: [`--datesToProcess=${JSON.stringify(displayDates)}`, `--maxPickableDate=${maxPickableDate}`],
+      preload: path.join(__dirname, 'current-preload.js')
+    }
+  })
+
+  // Get window location
+  const winBounds = global.win.getBounds()
+  global.x = winBounds.x
+  global.y = winBounds.y
+  // xArt = global.x + 400 // Offsets for article windows relative to current.html window
+  // yArt = global.y + 15
+
+  // and load the specified html file.
+  global.win.loadFile('current.html')
+
+  // Open the DevTools.
+  // win.webContents.openDevTools()
+  // }
 }
 
 // End of function definitions
 
 app.on('will-quit', async () => {
   // Close the application's tab in the remote Chrome instance
-  if (!browser.isConnected()) {
+  if (!browser?.isConnected()) {
     // Puppeteer will disconnect from the remote browser after a period of inactivity.
     // If this has happened, reconnect.
     await connectPup()

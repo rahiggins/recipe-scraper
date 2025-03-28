@@ -5,6 +5,16 @@
 // Function nameDiffersFromURL is called by function artScrape and by function sectionScrape in current.js.
 // Function artScrape is called by the Tampermonkey userscript Scrape.
 
+// Data structures
+//
+// returnObj {
+//  ID: "artInfo",
+//  hasRecipes: boolean,
+//  recipeList: [{ name: string, link: string, inconsistency: booolean } ...],
+//  titleInfo: { title: string, arttype: string, ATDPresent: boolean },
+//  url: string
+// }
+
 // eslint-disable-next-line no-unused-vars
 function nameDiffersFromURL (originalName, href) {
   // For links to cooking.nytimes.com/recipes/, see if the link text is consistent with the recipe name part of the link URL

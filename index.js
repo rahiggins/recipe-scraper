@@ -98,7 +98,7 @@ async function mainline () {
     console.log('index.js - mode: arg: ' + arg)
     if (arg === 'current') {
       global.win.close()
-      createWindow(29, 46, 900, 675, 'current-preload.js', 'current.html')
+      // createWindow(29, 46, 900, 675, 'current-preload.js', 'current.html')
       require('./current.js')
     } else if (arg === 'past') {
       global.win.close()
