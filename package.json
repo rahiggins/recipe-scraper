@@ -4,7 +4,8 @@
   "description": "Scrape recipes from nytimes.com",
   "main": "index.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "tbled": "electron tbl-ed.js"
   },
   "author": "Me",
   "license": "ISC",

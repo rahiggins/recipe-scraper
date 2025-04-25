@@ -1,7 +1,7 @@
 // This file is invoked by the current.html file and will
 // be executed in the renderer process for that window.
 
-//  Manual click version 3.0.0
+//  Manual click version 3.1.0
 
 // Code structure:
 //
@@ -20,7 +20,7 @@
 //  dateSpec.addEventListener for 'change'
 //   window.scraper.send('process-date')
 //
-//  submitButton.addEventListener for 'click'
+//  reviewButton.addEventListener for 'click'
 //   window.scraper.send('AOT')
 //   window.scraper.submitted
 //
@@ -71,7 +71,7 @@ const aL = document.getElementById('aL') // article list div
 const mL = document.getElementById('msgs') // messages list div
 const buttons = document.getElementById('buttons') // tableCompare buttons div
 const tableCompare = document.getElementById('tableCompare') // tableCompare table tbody element
-const submitButton = document.getElementById('submitButton') // submit button
+const reviewButton = document.getElementById('reviewButton') // submit button
 const articleTemplateContent = document.getElementById('articleTemplate').content
 let articlesIndexArray = [] // Array of article indices of articles added to the window
 let articleInfoObjsArray = [] // Array of article info objects sent from the main process
@@ -138,7 +138,7 @@ if (datesToProcess.length > 0) {
     datesList.insertAdjacentHTML('beforeend', date)
   }
 } else {
-  datesDiv.innerText = 'There are noi new dates to process'
+  datesDiv.innerText = 'There are no new dates to process'
 }
 
 datesList.addEventListener('click', (evt) => {
@@ -164,11 +164,11 @@ dateSpec.addEventListener('change', (evt) => {
   removeDateListItem = false // Don't try to remove the date from the dateList
 })
 
-submitButton.addEventListener('click', async (evt) => {
+reviewButton.addEventListener('click', async (evt) => {
   // Process click on the Submit button
   evt.preventDefault()
-  console.log('Mainline: Submit button clicked, disable Submit button')
-  submitButton.classList.add('disabled') // Disable the Submit button
+  console.log('Mainline: Review button clicked, disable Review button')
+  reviewButton.classList.add('disabled') // Disable the Submit button
 
   document.removeEventListener('click', articleClick)
   const ckd = document.querySelectorAll('input:checked') // Get checked articles
@@ -191,7 +191,7 @@ submitButton.addEventListener('click', async (evt) => {
   window.scraper.send('AOT', false) // Set the window's 'always on top' attribute to false
 
   // Send the array for checked article indices to the main process
-  window.scraper.submitted(JSON.stringify(checkedArticleIndices))
+  window.scraper.review(JSON.stringify(checkedArticleIndices))
 })
 
 window.scraper.onDisplayMsg((msg, opt) => {
@@ -236,8 +236,8 @@ window.scraper.onAddArticles((event, artInfoObjString) => {
   const cbAuthor = article.querySelector('.author')
 
   // If the Submit button is disabled, this is the first article being added. Enable the button, add an event listener for clicks on articles and set the window's 'always on top' attribute to true
-  if (submitButton.classList.contains('disabled')) {
-    submitButton.classList.remove('disabled')
+  if (reviewButton.classList.contains('disabled')) {
+    reviewButton.classList.remove('disabled')
     document.addEventListener('click', articleClick)
     window.scraper.send('AOT', true)
   }
@@ -401,4 +401,11 @@ window.scraper.onRemoveLastMsg(() => {
   // Remove last message
   Log('remove-lastMsg entered')
   mL.removeChild(mL.lastChild)
+})
+
+window.scraper.onRemoveDates(() => {
+  // Remove list of dates to process
+  Log('remove-dates entered')
+  datesList.remove()
+  dateSpec.disabled = true
 })

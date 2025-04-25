@@ -1,7 +1,37 @@
-3/2x/2025
+4/24/2025
+    manual click branch, add review/edit window
+    Add the fonts directory containing NYT fonts
+    Add recipe-table.css, used by the reviewWindow
+    Add review.html, review-preload.js, review-renderer.js and reviewStyles.css to suport the new reviewWindow
+    Change current.js
+        - Add documentaion of the data structures returned by the new review function
+        - Add function review to display the extracted articles and recipes for review and editing
+        In function Mainline:
+            - Change on.submitted handler to on.review
+                -- Call function review to display the reviewWindow
+                -- Create the day's table HTML from the output of function review
+            - Remove messages from the mainWindow before adding the Continue button
+    Change current-preload.js
+        - Change submitted: to review:
+    Change current.html
+        - Change Submitted button to Review button
+    Change current-renderer.js
+        - Change Submitted button to Review button
+        - Handle message to remove the datesList when the Cancel button in the reviewWindow is clicked
+    Change .gitignore
+        - ignore /fonts and tbl-ed.js
+    Also:
+    Change artScrape.js
+        - Change function nameDiffersFromURL
+            -- exit immediately with false if the URL does not contain cooking.nytimes.com
+    Change tpScrape.user.js
+        - Remove code that closes the Today's Paper tab
+        
+
+3/27/2025
     manual-click branch initial commit
     Change index.js
-        - Move creation of the BrowserWindow for the currrent mode to current.js
+        - Move creation of the BrowserWindow for the current mode to current.js
     Change current.html
         - Move <style>...</style> to ScraperStyles.css
         - Add an ArticleTemplate for the article checkboxes previously added through javascript

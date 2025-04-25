@@ -7,9 +7,9 @@
 
 // The application works with Tampermonkey userscripts (tpScrap and Scrape), installed in the launched Chrome instance.  Userscript tpScrape is invokfrom a Tampermonkey menu command and scrapes the food section (Food or Magazine) of the Today's Paper page for article titles, authors and URLs. Userscript Scrape scrapes opened articles for recipes. The userscripts send their results to the recipe-scraper application via HTTP.
 
-// The recipe-scraper application formats the information sent by the userscripts as table HTML. It displays the table entries for editing and then adds the entries to the year's index.html file. It also adds the day's entries to the local NYTArticles dagtabase and creates SQL statements to add the entries to the remote NYTArticles database.
+// The recipe-scraper application formats the information sent by the userscripts as table HTML. It displays the table entries for review and editing. It then adds the entries to the year's index.html file. It also adds the day's entries to the local NYTArticles dagtabase and creates SQL statements to add the entries to the remote NYTArticles database.
 
-// manual click version 3.0.0
+// manual click version 3.1.0
 
 // Code structure:
 //
@@ -22,6 +22,13 @@
 //  function requestListener
 //    function addArticles
 //    function artInfo
+//
+//  function review
+//    function receiveRow
+//    ipcMain.once('cancel')
+//    ipcMain.on('send-row'
+//    ipcMain.once('save')
+//    new BrowserWindow()
 //
 //  function updateIndexHTML
 //
@@ -43,8 +50,8 @@
 //  function Mainline
 //    http.createServer
 //    server.listen
-//    ipcMain.on('submitted'
-//    ipcMain.on('openTP'
+//    ipcMain.on('review')
+//    ipcMain.on('openTP')
 //    ipcMain.on('process-date')
 //    ipcMain.on('AOT')
 //    new BrowserWindow()
@@ -60,7 +67,10 @@
 //      On POST with ID articleInfo (sent by userscript Scrape):
 //        - Call addArticles
 //    Create the mainWindow Browser window
-//    On 'submitted':
+//    On 'review':
+//      Call review
+//        On 'send-row'
+//          Call receiveRow
 //      Call checkExisting
 //      Call dayCompare
 //        Call createButton
@@ -115,6 +125,13 @@
 // }
 //
 // Key:value pairs in the corresponding artObj object are added to the artInfo object in the requestListener function.
+//
+// tableRowsArray [[date Obj, type Obj, name Obj], ...]  Returned by function review
+// Obj {
+//  content: string,
+//  classList: string
+// }
+//
 
 const { NewDays, Insert } = require('./lib.js') // Shared scraper functions
 const { app, ipcMain, BrowserWindow } = require('electron') // InterProcess Communications
@@ -259,15 +276,21 @@ async function requestListener (req, res) {
     res.end('{"message": "OK"}')
 
     // Find the corresponding element of the Today's Paper object array
+    // let notMatched = true // Attempt to handle additional articles not on the Today's Paper page
     for (const artObj of tpObjArray) {
       if (artObj.tpHref === postObj.url) {
         // When found, merge the Today's Paper onject keys in the the article info object received from Scrape
         Object.assign(postObj, artObj)
         // If a title could not be found (57 Sandwiches That Define New York City - 6/19/2024), use the article title from the Today's Paper page
         postObj.titleInfo.title = postObj.titleInfo.title || artObj.tpTitle
+        // notMatched = false // Attempt to handle additional articles not on the Today's Paper page
         break
       }
     }
+    // if (notMatched) { // Attempt to handle additional articles not on the Today's Paper page
+    //   postObj.index = nextIndex
+    //   nextIndex += 1
+    // }
     // Add article info to the articles array ...
     articleInfoObjArray.push(postObj)
     if (firstArticle) {
@@ -281,6 +304,7 @@ async function requestListener (req, res) {
   // End of function definitions
 
   let body = ''
+  // let nextIndex // Attempt to handle additional articles not on the Today's Paper page
   // Collect chucnks of the POST data
   req.on('data', function (chunk) {
     body += chunk
@@ -297,6 +321,7 @@ async function requestListener (req, res) {
       case 'articleArray':
         // Handle an array of article objects
         tpObjArray = postObj.articles
+        // nextIndex = tpObjArray.length // Attempt to handle additional articles not on the Today's Paper page
         tpURL = postObj.url
         tpDateObj = Moment(tpURL.replace(/^.*?(\d{4})\/(\d{2})\/(\d{2}).*$/, '$2/$3/$1'), 'MM/DD/YYYY')
         sect = postObj.sectionName
@@ -330,6 +355,96 @@ async function requestListener (req, res) {
         res.setHeader('Content-Type', 'application/json')
         res.writeHead(501)
         res.end(`{"message": "In the object POSTed, the value of the ID key: ${postObj.ID}, was not recognized"}`)
+    }
+  })
+}
+
+function review (checkedArticleIndices) {
+  // Display the checked articles and their recipes in a new window for review and editing
+  // Called from on.'submitted'
+  // Input - the array of checked article indices in the articleInfoObjArray
+  // Output - a promise, resolved with an array of table row contents when the Commit button is clicked
+
+  const tableRowsArray = []
+
+  function receiveRow (evt, date, type, name) {
+    // Push the row's content onto the output array
+    Log('receiveRow entered')
+    tableRowsArray.push([date, type, name])
+  }
+
+  return new Promise(function (resolve, reject) {
+    // The promise is resolved by a click on the Commit button or the Cancel buttton
+
+    ipcMain.once('cancel', () => {
+      // When the Cancel button is clicked, the recipe scraper application will be terminated
+      reviewWindow.close()
+      global.win.webContents.send('remove-msgs')
+      global.win.webContents.send('remove-dates')
+      global.win.webContents.send('display-msg', 'You cancelled the recipe scrape')
+      reject(new Error('Terminated by user')) // Reject Promise
+    })
+
+    // For each table row ...
+    ipcMain.on('send-row', receiveRow)
+
+    ipcMain.once('save', () => {
+      // When the Save button is clicked, clean up and resolve the returned promise
+      Log('once.save entered')
+      ipcMain.off('send-row', receiveRow)
+      reviewWindow.close()
+      resolve(tableRowsArray) // Resolve Promise
+    })
+
+    global.win.webContents.send('enable-continue')
+    console.log('review entered')
+
+    // Display the Review window ...
+    const reviewWindow = new BrowserWindow({
+      x: global.win.x + 29,
+      y: global.win.y + 46,
+      width: 1200,
+      height: 1000,
+      parent: global.win,
+      modal: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'reviewPreload.js')
+      }
+    })
+
+    // and load the its html file.
+    reviewWindow.loadFile('review.html')
+    // reviewWindow.show()
+
+    if (checkedArticleIndices.length > 0) {
+      // If any articles were checked, send the content for each checked article and its recipes to the renderer process to be displayed as table rows
+      const tpDate = tpDateObj.format('MM/DD/YYYY')
+      // const tpYear = tpDate.substring(6)
+      const inconsistent = '<span class="inconsistent">inconsistent name: </span>'
+      let date = `<a href="${tpURL}">${tpDate}</a>`
+      let dateClassList = 'date'
+      let type = ''
+      let typeClassList = 'type'
+      let name = ''
+      let nameClassList = 'name'
+      reviewWindow.webContents.send('add-row', { content: date, classList: dateClassList }, { content: type, classList: typeClassList }, { content: name, classList: nameClassList })
+      dateClassList = ''
+      typeClassList = ''
+      nameClassList = ''
+      checkedArticleIndices.forEach((idx) => {
+        const artObj = articleInfoObjArray.filter((el) => el.index === idx)[0]
+        date = ''
+        type = artObj.titleInfo.arttype
+        name = `<a href="${artObj.url}">${artObj.titleInfo.title}</a> ${artObj.titleInfo.ATDPresent}`
+        reviewWindow.webContents.send('add-row', { content: date, classList: dateClassList }, { content: type, classList: typeClassList }, { content: name, classList: nameClassList })
+        for (const recipe of artObj.recipeList) {
+          const recipeName = recipe.inconsistency ? inconsistent + recipe.name : recipe.name
+          date = ''
+          type = 'recipe'
+          name = `<a href="${recipe.link}">${recipeName}</a>`
+          reviewWindow.webContents.send('add-row', { content: date, classList: dateClassList }, { content: type, classList: typeClassList }, { content: name, classList: nameClassList })
+        }
+      })
     }
   })
 }
@@ -922,33 +1037,39 @@ async function Mainline () {
     console.log(`Server is running on http://${host}:${port}`)
   })
 
-  ipcMain.on('submitted', async (evt, checkedArticleIndicesString) => {
-    // When the 'Submit' button is clicked, ...
+  ipcMain.on('review', async (evt, checkedArticleIndicesString) => {
+    // When the 'Review' button is clicked, ...
     const checkedArticleIndices = JSON.parse(checkedArticleIndicesString)
     Log('checkedArticleIndices: ' + checkedArticleIndices)
+
     if (checkedArticleIndices.length > 0) {
       // If any articles were checked, create table HTML for the date being processed
       const tpDate = tpDateObj.format('MM/DD/YYYY')
       const tpYear = tpDate.substring(6)
-      const inconsistent = '<span class="inconsistent">inconsistent name: </span>'
-      newTableHTML = '              <tr>\n                <td class="date"><a href="' + tpURL + '">'
-      newTableHTML += tpDate + '</a></td>\n'
-      newTableHTML += '                <td class="type"><br>\n'
-      newTableHTML += '                </td>\n                <td class="name"><br>\n'
-      newTableHTML += '                </td>\n              </tr>\n'
-      checkedArticleIndices.forEach((idx) => {
-        const artObj = articleInfoObjArray.filter((el) => el.index === idx)[0]
-        newTableHTML += '              <tr>\n                <td><br>\n                </td>\n                <td>' + artObj.titleInfo.arttype + '\n'
-        newTableHTML += '                </td>\n                <td><a href="'
-        newTableHTML += artObj.url + '">' + artObj.titleInfo.title + '</a>' + artObj.titleInfo.ATDPresent + '</td>\n              </tr>\n'
 
-        for (const recipe of artObj.recipeList) {
-          const recipeName = recipe.inconsistency ? inconsistent + recipe.name : recipe.name
-          newTableHTML += '              <tr>\n                <td><br>\n                </td>\n                <td>recipe\n'
-          newTableHTML += '                </td>\n                <td><a href="'
-          newTableHTML += recipe.link + '">' + recipeName + '</a></td>\n              </tr>\n'
-        }
-      })
+      // Display the content of checked articles and their recipes in a new window for review
+      const tableRowsArray = await review(checkedArticleIndices)
+
+      // Write article/recipe content to disk
+      // const tableRowInfoFile = path.join(app.getPath('appData'), app.getName(), 'tableRowInfo.txt')
+      // const tableRowInfo = fs.createWriteStream(tableRowInfoFile)
+
+      let rowHTML = ''
+      for (const row of tableRowsArray) {
+        // tableRowInfo.write(JSON.stringify(row) + '\n')
+        const [date, type, name] = row
+        rowHTML += '              <tr>\n'
+        rowHTML += `                <td class="${date.classList}">${date.content}\n`
+        rowHTML += '                </td>\n'
+        rowHTML += `                <td class="${type.classList}">${type.content}\n`
+        rowHTML += '                </td>\n'
+        rowHTML += `                <td class="${name.classList}">${name.content}\n`
+        rowHTML += '                </td>\n'
+        rowHTML += '              </tr>\n'
+        newTableHTML += rowHTML.replaceAll(' class=""', '')
+        rowHTML = ''
+      }
+      // tableRowInfo.close()
       console.log('Created HTML for ' + tpDate)
 
       // If a date was entered and table HTML for that date already exists, compare the two HTMLs
@@ -1005,6 +1126,7 @@ async function Mainline () {
           newTableHTML = '' // Reset newTableHTML
 
           // Add "Review ..." message and a 'Continue' submit button to index.html
+          global.win.webContents.send('remove-msgs')
           global.win.webContents.send('add-continue')
 
           // Call processNewDays to wait for 'Continue' submitted, and then look for new and changed days

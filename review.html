@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Review articles and recipes</title>
+    <link rel="stylesheet" href="spectre.min.css">
+    <link rel="stylesheet" href="spectre-icons.min.css">
+    <link rel="stylesheet" href="recipe_table.css">
+    <link rel="stylesheet" href="reviewStyles.css">
+    <link rel="stylesheet" href="ScraperStyles.css">
+  </head>
+  <!--
+    Template for a table row
+  -->
+  <template id="trow">
+    <tr>
+      <td>
+        <div class="menu-container">
+          <div class="menu-cell text-large">
+            ...
+          </div>
+          <ul class="menu hover-menu">
+            <li class="menu-item" data-iae-position="beforebegin">
+              Insert above
+            </li>
+            <li class="menu-item" data-iae-position="afterend">
+              Insert below
+            </li>
+            <li class="menu-item" data-direction="up">
+              Move up
+            </li>
+            <li class="menu-item" data-direction="down">
+              Move down
+            </li>
+            <li class="menu-item" data-cmd='repl'>
+              Repl
+            </li>
+            <li class="menu-item">
+              Del
+            </li>
+            <li class="menu-item">
+              &lt;code&gt;
+            </li>
+          </ul>
+        </div>
+      </td>
+      <td class="date">
+        <div contenteditable="true"></div></td>
+      <td class="type">
+        <div contenteditable="true"></div></td>
+      <td class="name" data-code="eligible">
+        <div contenteditable="true" data-code-toggle="0"></div></td>
+    </tr>
+  </template>
+  <!--
+    Body of the page
+  -->
+  <body>
+    <div class="outer"> 
+      <div class="container p-fixed control-div m-2">
+        <div class="columns">
+          <div class="column col-8">
+            <div class="columns col-oneline">                        
+              <div class="column col-auto ml-2">
+                <buttton class="btn m-1" id="saveBtn">Save</buttton>
+              </div>
+              <div class="column col-auto">
+                <buttton class="btn m-1" id="cancelBtn">Cancel</buttton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="container pt-2 p-relative table-div">
+        <table class="table mt-2">
+          <tbody style="scroll-margin-top: 60px;">
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <script src="./review-renderer.js"></script>
+  </body>
+</html>

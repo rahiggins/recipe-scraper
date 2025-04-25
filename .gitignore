@@ -1,4 +1,5 @@
 /.DS_Store
+/fonts
 /index-test.html
 /node_modules
 /package-lock.json
@@ -9,6 +10,7 @@ commit.txt
 spectre.min.css
 recipe-scraper.png
 recipe-scraper.svg
+tbl-ed.js
 /.vscode
 *.bak
 /ephemera

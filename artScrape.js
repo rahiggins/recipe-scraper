@@ -24,6 +24,10 @@ function nameDiffersFromURL (originalName, href) {
   //          cooking.nytimes.com URL <string>
   // Output - boolean, true if name differs from URL
 
+  if (!href.includes('cooking.nytimes.com')) {
+    return false // This applies only to cooking.nytimes.com URLs
+  }
+
   function consistencyCheck (nameArray, urlArray) {
     // Perform the test that determines if the recipe name text is consistent with the recipe URL.
 

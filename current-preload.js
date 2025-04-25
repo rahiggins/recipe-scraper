@@ -60,9 +60,12 @@ contextBridge.exposeInMainWorld(
     onRemoveLastMsg: (fn) => {
       ipcRenderer.on('remove-lastMsg', (event, ...args) => fn(...args))
     },
+    onRemoveDates: (fn) => {
+      ipcRenderer.on('remove-dates', (event, ...args) => fn(...args))
+    },
     added: () => ipcRenderer.send('added'),
     articleClick: (action, href) => ipcRenderer.send('article-click', action, href),
-    submitted: (indices) => ipcRenderer.send('submitted', indices),
+    review: (indices) => ipcRenderer.send('review', indices),
     created: () => ipcRenderer.send('created')
   }
 )

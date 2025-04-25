@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         tpScrape
 // @namespace    http://tampermonkey.net/
-// @version      2025-02-26
+// @version      2025-03-30
 // @description  Scrape a Today's Paper page for food articles
 // @author       You
 // @exclude      https://www.nytimes.com/www.nytimes.com/indexes/*/*/*/index.html#*
@@ -44,9 +44,7 @@
           },
           onload (response) {
             const responseObj = JSON.parse(response.responseText)
-            if (responseObj.message === 'OK' && !debug) {
-              window.close()
-            }
+            console.lof(responseObj.message)
           }
         })
     }, "t");
