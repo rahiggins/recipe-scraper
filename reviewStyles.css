@@ -1,0 +1,59 @@
+.control-div {
+  background-color: #f4ecff;
+  z-index: 2;
+  top: 0;
+}
+
+.table-div {
+  z-index: 1;
+  overflow: auto;
+  top: 60px;
+  flex-grow: 1;
+}
+
+.table {
+  width: auto;
+  margin-bottom: 20px;
+}
+
+.table td, .table th {
+  border: 1px solid black;
+  border-bottom: 1px solid black;
+  border-collapse: collapse;
+  padding: .2rem .4rem;
+}
+
+td.date {
+  scroll-margin-top: 60px;
+}
+
+.menu-cell {
+  padding-top: 0px;
+  padding-bottom: 6px
+}
+
+.menu-container {
+  position: relative;
+  display: inline-block;
+  pointer-events: auto;
+}
+
+ul.hover-menu {
+  display: none;
+  position: absolute;
+  top: -15px;
+  left: 10px;
+  background-color: #f1f1f1;
+  min-width: 120px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 1;
+}
+
+td.name {
+  width: 650px;
+}
+
+.hover-menu li:hover {background-color: #ddd;}
+tr:has(td:nth-of-type(1) div.menu-container:hover) {
+  border: 2px solid;
+}

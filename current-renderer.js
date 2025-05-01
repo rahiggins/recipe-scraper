@@ -1,7 +1,7 @@
 // This file is invoked by the current.html file and will
 // be executed in the renderer process for that window.
 
-//  Context-isolation version 1.0
+//  Manual click version 3.1.0
 
 // Code structure:
 //
@@ -11,9 +11,18 @@
 //    function addMsg
 //    function remvAllMsg
 //    function addProgress
+//    function articleClick
+//     window.scraper.articleClick
 //
-//  startButton EventListener for 'click'
-//    window.scraper.send('process-date')
+//  datesList.addEventListener for 'click'
+//   window.scraper.send('openTP')
+//
+//  dateSpec.addEventListener for 'change'
+//   window.scraper.send('process-date')
+//
+//  reviewButton.addEventListener for 'click'
+//   window.scraper.send('AOT')
+//   window.scraper.submitted
 //
 //  window.scraper.onDisplayMsg
 //    calls function addMsg
@@ -21,20 +30,13 @@
 //  window.scraper.onRemoveMsgs
 //    calls function remvAllMsg
 //
-//  window.scraper.onAddThrobber
-//
-//  window.scraper.onCreateProgressBar
-//    calls addProgress
-//
-//  window.scraper.onUpdateProgressBar
-//    calls addProgress
-//
 //  window.scraper.onAddArticles
-//    function articleListen
-//      function articleClick
-//        event.sender.send 'article-click', 'click'
-//      document EventListener for 'click'
-//    event.sender.send('added')
+//    window.scraper.send('AOT')
+//    document.addEventListener for 'click'
+//     calls function articleClick
+//    window.scraper.added
+//
+//  window.scraper.onUpdateMaxDate
 //
 //  window.scraper.onAddButton
 //    'aList' EventListener for 'submit'
@@ -59,18 +61,22 @@
 //  window.scraper.onDisplayTableCompare
 //
 //  window.scraper.onRemoveLastMsg
-//
-//  window.scraper.onEnableStartButton
 
 const debug = true
-let articleClick // Click event handler function, defined and added in articleListen function, removed in processSelectedArticles function.
-let sectArtDiv // <div> element containing a progress bar and its label
 
+const datesDiv = document.getElementById('datesDiv') // dates to process list div
+const datesList = document.getElementById('datesList') // dates to process list
+const dateSpec = document.getElementById('dateSpec')
 const aL = document.getElementById('aL') // article list div
 const mL = document.getElementById('msgs') // messages list div
-const pB = document.getElementById('progressBar') // progress bar div
 const buttons = document.getElementById('buttons') // tableCompare buttons div
 const tableCompare = document.getElementById('tableCompare') // tableCompare table tbody element
+const reviewButton = document.getElementById('reviewButton') // submit button
+const articleTemplateContent = document.getElementById('articleTemplate').content
+let articlesIndexArray = [] // Array of article indices of articles added to the window
+let articleInfoObjsArray = [] // Array of article info objects sent from the main process
+let todaysPaperURL // URL of the date being processed Today's Paper page
+let removeDateListItem // true if processing a dateList element, false if date was picked
 
 // Function definitions
 
@@ -112,45 +118,80 @@ function remvAllMsg (msgDiv) {
   }
 }
 
-function addProgress (now, max) {
-  // Called from sectionScrape
-  // Input:   now - number of articles retrieved
-  //          max - number of articles to be retrieved
-  // return a progress bar element
+function articleClick (evt) {
+  // Called by click on article title
+  // Input is a click event
+  // Process click on article titles
 
-  const prog = document.createElement('progress')
-  prog.id = 'artProg'
-  prog.classList = ' progress float-left'
-  prog.style.paddingTop = '28px' // aligns progress bar with adjacent text, derived empirically
-  prog.max = max
-  prog.value = now
-  return prog
+  if (evt.target.classList.contains('article')) {
+    evt.preventDefault()
+    const artIdx = evt.target.parentNode.firstChild.value
+    console.log('Article clicked: ' + articleInfoObjsArray[artIdx].titleInfo.title)
+    window.scraper.articleClick('click', articleInfoObjsArray[artIdx].url)
+  }
 }
 
-// Determine the minimum and maximum dates for the type=date input
-//  field dateSpec
+// Add the dates to be processed to the window
+const datesToProcess = JSON.parse(window.scraper.datesToProcessString)
+if (datesToProcess.length > 0) {
+  for (const date of datesToProcess) {
+    datesList.insertAdjacentHTML('beforeend', date)
+  }
+} else {
+  datesDiv.innerText = 'There are no new dates to process'
+}
 
-// For the maximum date: today.  Locale sv-SE date format is the required YYYY-MM-DD
-const today = new Date()
-const todayStr = today.toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).substr(0, 10)
+datesList.addEventListener('click', (evt) => {
+  // Process click on a date in the dateList
+  evt.preventDefault()
+  console.log(evt.target.tagName)
+  todaysPaperURL = evt.target.getAttribute('href')
+  console.log('Go to: ' + todaysPaperURL)
+  window.scraper.send('openTP', todaysPaperURL) // Open the Today's Paper page for the selected date
+  removeDateListItem = true // Remove the date from the dateList after it's been processed
+})
 
-// The minimum date is 2006-04-02 because there's no Today's Paper
-//  before that date
-
-// Set the minimum and maximum dates.
+// Set the minimum and maximum dates for the type=date input field dateSpec
+// The minimum date is 2006-04-02 because there's no Today's Paper before that date
 const dateInput = document.getElementById('dateSpec')
 dateInput.min = '2006-04-02'
-dateInput.max = todayStr
+dateInput.max = window.scraper.maxPickableDate
 
-const startButton = document.getElementById('startButton')
-startButton.addEventListener('click', async (evt) => {
-  // After Start click:
+dateSpec.addEventListener('change', (evt) => {
+  // Process a date selected in the dateSpec input field
+  Log('dateSpec: ' + evt.target.value)
+  window.scraper.send('process-date', evt.target.value) // Send the selected date to the main process
+  removeDateListItem = false // Don't try to remove the date from the dateList
+})
+
+reviewButton.addEventListener('click', async (evt) => {
+  // Process click on the Submit button
   evt.preventDefault()
-  console.log('Mainline: Start button clicked, disable Start button')
-  startButton.classList.add('disabled') // Disable the Start button
-  remvAllMsg(mL) // Remove any previous messages
-  const enteredDate = document.getElementById('dateSpec').value
-  window.scraper.send('process-date', enteredDate)
+  console.log('Mainline: Review button clicked, disable Review button')
+  reviewButton.classList.add('disabled') // Disable the Submit button
+
+  document.removeEventListener('click', articleClick)
+  const ckd = document.querySelectorAll('input:checked') // Get checked articles
+  const checkedArticleIndices = [] // Returned to the main process
+  // For each checked article, add its index to the return array
+  for (let j = 0; j < ckd.length; j++) {
+    checkedArticleIndices.push(parseInt(ckd[j].value))
+  }
+
+  // Remove article checkboxes
+  while (aL.firstChild) {
+    aL.removeChild(aL.lastChild)
+  }
+  articlesIndexArray = [] // Reset array of article indices added to the window
+  articleInfoObjsArray = [] // Reset array of article info objects sent from the main process
+  if (removeDateListItem) {
+    // Remove the submitted articles' date from the dateList
+    Array.from(datesList.querySelectorAll('a')).filter((el) => el.getAttribute('href') === todaysPaperURL)[0].remove()
+  }
+  window.scraper.send('AOT', false) // Set the window's 'always on top' attribute to false
+
+  // Send the array for checked article indices to the main process
+  window.scraper.review(JSON.stringify(checkedArticleIndices))
 })
 
 window.scraper.onDisplayMsg((msg, opt) => {
@@ -165,7 +206,7 @@ window.scraper.onRemoveMsgs((div) => {
       remvAllMsg(mL)
       break
     case 'progressBar':
-      remvAllMsg(pB)
+      // remvAllMsg(pB)
       break
     case 'all':
       remvAllMsg(mL)
@@ -176,139 +217,66 @@ window.scraper.onRemoveMsgs((div) => {
   }
 })
 
-window.scraper.onAddThrobber(() => {
-  // Add a throbber icon while retrieving the Today's Paper page
-  const loadingDiv = document.createElement('div')
-  loadingDiv.className = 'loading loading-lg col-3'
-  loadingDiv.id = 'lD'
-  aL.appendChild(loadingDiv)
-})
-
-window.scraper.onCreateProgressBar((max, barLabel) => {
-  // Create a progress bar
-  console.log('create-progressBar entered with:')
-  console.log(' max: ' + max)
-  console.log(' barLabel: ' + barLabel)
-
-  // Create a float-left div
-  sectArtDiv = document.createElement('div')
-  sectArtDiv.className = 'float-left'
-
-  // Create a "Retrieving n ... articles" <p> element
-  const para = document.createElement('p')
-  para.classList = 'pr-2 float-left msg'
-  const txnd = document.createTextNode(barLabel)
-  para.appendChild(txnd)
-
-  // Add "Retrieving n ... articles" element and a progress bar to the float-left div
-  sectArtDiv.appendChild(para)
-  sectArtDiv.appendChild(addProgress(0, max))
-
-  // Remove the "Retrieving Today's Paper" message and add the float-left div to the messages div
-  mL.removeChild(mL.lastChild)
-  pB.appendChild(sectArtDiv)
-})
-
-window.scraper.onUpdateProgressBar((now, max) => {
-  // Update the progress bar
-  console.log('update-progressBar entered with:')
-  console.log(' now: ' + now)
-  console.log(' max: ' + max)
-
-  sectArtDiv.removeChild(sectArtDiv.lastChild) // Remove the progress bar
-  sectArtDiv.appendChild(addProgress(now, max)) // and add an updated one
-})
-
-window.scraper.onAddArticles((event, artsArrayString, text) => {
+window.scraper.onAddArticles((event, artInfoObjString) => {
   // args - an array:
   //          - a stringified array of article objects returned by TPscrape
-  //          - a {Magazine|Food} articles description to be displayed
   //
-  // Add checkboxes for articles returned by TPscrape to current.html
+  // Add checkboxes for articles returned by TPscrape to the window
 
   console.log('addArticles: entered')
 
-  const artsArray = JSON.parse(artsArrayString)
+  const artInfo = JSON.parse(artInfoObjString)
+  Log(artInfo)
 
-  let stringI
-  let lbl
-  let checkbox
-  let iicon
-  let cbTitle
-  let cbAuthor
+  // Clone the article template an get the elements that will be filled in
+  const article = articleTemplateContent.cloneNode(true)
+  const cbLabel = article.querySelector('label')
+  const cbInput = article.querySelector('input')
+  const cbTitle = article.querySelector('.article')
+  const cbAuthor = article.querySelector('.author')
 
-  function articleListen (artsArray) {
-    // Called from addArticles
-    // Input is the article object passed to addArticles from TPscrape
-    // Add and eventListener for clicks
-
-    articleClick = function (evt) {
-      // Called by click on article title
-      // Input is a click event
-      // Process click on article titles
-
-      if (evt.target.classList.contains('article')) {
-        evt.preventDefault()
-        const artIdx = evt.target.parentNode.firstChild.value
-        console.log('Article clicked: ' + (artsArray[artIdx].titleInfo.title || artsArray[artIdx].tptitle))
-        window.scraper.articleClick('click', artsArray[artIdx].url)
-      }
-    }
-
-    console.log('Add articleClick')
+  // If the Submit button is disabled, this is the first article being added. Enable the button, add an event listener for clicks on articles and set the window's 'always on top' attribute to true
+  if (reviewButton.classList.contains('disabled')) {
+    reviewButton.classList.remove('disabled')
     document.addEventListener('click', articleClick)
+    window.scraper.send('AOT', true)
   }
 
-  articleListen(artsArray) // Add an eventListener for click on article titles
-  // Passing the article object to a function that ...
-  // ... adds the eventListener makes the article object ...
-  // ... available to the event handler
+  // Fill in article elements with the article's information
+  const idx = artInfo.index.toString()
+  cbLabel.id = 'li' + idx
+  cbInput.id = 'cbi' + idx
+  cbInput.value = idx
+  cbInput.name = 'cbn' + idx
+  if (artInfo.hasRecipes) {
+    cbInput.checked = true
+  }
+  cbTitle.innerText = artInfo.titleInfo.title
+  cbAuthor.innerText = artInfo.author
 
-  // Add {Magazine|Food} articles description to current.html
-  addMsg(mL, text)
-
-  // Remove throbber
-  const element = document.getElementById('lD')
-  element.parentNode.removeChild(element)
-
-  // Add a checkbox for each article to index.html
-  let i = 0
-  for (const artObj of artsArray) {
-    stringI = i.toString()
-
-    lbl = document.createElement('label')
-    lbl.className = 'form-checkbox'
-
-    checkbox = document.createElement('input')
-    checkbox.type = 'checkbox'
-    if (artObj.hasRecipes) {
-      checkbox.checked = true
-    }
-    checkbox.name = 'cbn' + stringI
-    checkbox.value = stringI
-    checkbox.id = 'cbi' + stringI
-
-    iicon = document.createElement('i')
-    iicon.className = 'form-icon'
-
-    cbTitle = document.createElement('div')
-    cbTitle.className = 'article'
-    cbTitle.innerText = artObj.titleInfo.title || artObj.tpTitle
-
-    cbAuthor = document.createElement('div')
-    cbAuthor.classList = 'text-gray author'
-    cbAuthor.innerText = artObj.author
-
-    lbl.appendChild(checkbox)
-    lbl.appendChild(iicon)
-    lbl.appendChild(cbTitle)
-    lbl.appendChild(cbAuthor)
-    aL.appendChild(lbl)
-    i += 1
+  // Find the index of the first previously added article that is greater than this article's index.
+  const followingArticleIndex = articlesIndexArray.findIndex((element) => element > artInfo.index)
+  Log('Indices: ' + artInfo.index + ', ' + followingArticleIndex)
+  if (followingArticleIndex === -1) {
+    // If no such index is foudn, add the article to the end of the article list
+    aL.appendChild(article)
+  } else {
+    // Otherwise, insert this article before the article whose index was found
+    const followingArticle = document.getElementById('li' + followingArticleIndex)
+    const newArticle = article.querySelector('label')
+    followingArticle.insertAdjacentElement('beforebegin', newArticle)
   }
 
+  // Add the article's index and artInfo object to their respective arrays and tell the main process that the article was added
+  articlesIndexArray[artInfo.index] = artInfo.index
+  articleInfoObjsArray[artInfo.index] = artInfo
   window.scraper.added()
   console.log('addArticles: exit')
+})
+
+window.scraper.onUpdateMaxDate((event, maxDate) => {
+  // After a date is processed, update the dateSpec max attribute
+  dateSpec.max = maxDate
 })
 
 window.scraper.onAddButton((event, buttonText) => {
@@ -430,13 +398,14 @@ window.scraper.onDisplayTableCompare((html) => {
 })
 
 window.scraper.onRemoveLastMsg(() => {
-  // Remove ?
+  // Remove last message
   Log('remove-lastMsg entered')
   mL.removeChild(mL.lastChild)
 })
 
-window.scraper.onEnableStartButton(() => {
-  // Enable/Disable the Start button
-  Log('enable-start entered')
-  startButton.classList.remove('disabled')
+window.scraper.onRemoveDates(() => {
+  // Remove list of dates to process
+  Log('remove-dates entered')
+  datesList.remove()
+  dateSpec.disabled = true
 })

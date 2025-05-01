@@ -1,6 +1,102 @@
+4/24/2025
+    manual click branch, add review/edit window
+    Add the fonts directory containing NYT fonts
+    Add recipe-table.css, used by the reviewWindow
+    Add review.html, review-preload.js, review-renderer.js and reviewStyles.css to suport the new reviewWindow
+    Change current.js
+        - Add documentaion of the data structures returned by the new review function
+        - Add function review to display the extracted articles and recipes for review and editing
+        In function Mainline:
+            - Change on.submitted handler to on.review
+                -- Call function review to display the reviewWindow
+                -- Create the day's table HTML from the output of function review
+            - Remove messages from the mainWindow before adding the Continue button
+    Change current-preload.js
+        - Change submitted: to review:
+    Change current.html
+        - Change Submitted button to Review button
+    Change current-renderer.js
+        - Change Submitted button to Review button
+        - Handle message to remove the datesList when the Cancel button in the reviewWindow is clicked
+    Change .gitignore
+        - ignore /fonts and tbl-ed.js
+    Also:
+    Change artScrape.js
+        - Change function nameDiffersFromURL
+            -- exit immediately with false if the URL does not contain cooking.nytimes.com
+    Change tpScrape.user.js
+        - Remove code that closes the Today's Paper tab
+        
+
+3/27/2025
+    manual-click branch initial commit
+    Change index.js
+        - Move creation of the BrowserWindow for the current mode to current.js
+    Change current.html
+        - Move <style>...</style> to ScraperStyles.css
+        - Add an ArticleTemplate for the article checkboxes previously added through javascript
+        - Add an <ul> element to the left of the dateSpec input element and remove the Start button
+        - Remove the progressBar div
+        - Add a Submit button positioned at the bottom of the window
+    Change ScraperStyles.css
+        - Add styles moved from current.html
+        - Add styles needed to position the Submit buttom at the bottom of the window
+    Change current.js
+        - Update the code structure, program flow and datga structures documentation
+        - Remove module cheerio-get-css-selector
+        - Require BrowserWindow from electron
+        - Remove function getRandomInt
+        - Add function getEpoch, called by function Mainline and .on('process-date')
+        In function requestListener:
+            - Add function addArticles to add an article to the window
+            - Change function artInfo to:
+                -- Merge article information from the artObj object corresponding to the received artInfo object into the artInfo object
+                -- Call function addArticles to send the artInfo object to the renderer process to add the article to the window
+            - Add code to handle the articleArray object sent by the tpScrape userscript
+        In function Mainline:
+            - Remove the call to connectPup and creation of a BrowserWindow page
+            - Remove function addArticles; adding articles to the window is done in function requestListener
+            - Remove the code in .on('process-date') that calls TPscrape
+            - Move code to determine new dates to process from .on('process-date') to function Mainline
+            - Add .on('submitted') to function Mainline to process selected articles
+                -- Move the code in function processSelectedArticles to .on('submitted') and delete function        processSelectedArticles
+                -- Move the code creating table HTML for an article from .on('process-date') and from function sectionScrape to .on('submitted')
+                -- Move code that calls checkExisting, dayCompare and updateHTML and that saves lastDate.txt from .on('process-date') to .on('submitted')
+            - Add .on('openTP') to function Mainline to open a Today's Paper page in Google Chrome
+            - Change .on('process-date') to handle a date specified in with the date picker by opening the date's Today's Paper page in Google Chrome.
+            - Add .on('AOT') to set the window's 'always on top' attribute
+            - Add code to create a BrowserWindow
+        - Remove function TPscrape
+            -- Code in the internal function sectionScrape to collect information from the Today's Paper page is moved to a separate file, tpScrape.js. sectionScrape code to create table HTML is moved to the .on('submitted') routine. 
+            -- Checking for redirects is no longer necessary.
+    Change current-renderer.js
+        - Remove function addProgress
+        - Move function articleClick out of function articleListen and change how articleClick gets the article URL
+        - Add date to process links to the window
+        - Add an eventListener for the list of dates to process. It sends an 'openTP' message to the main process.
+        - Remove the Start button eventListener
+        - Add a Submit button eventListener. It sends the checkedArticleIndices array to the main process.
+        - Remove the .onAddThrobber, .onCreateProgressBar and .onUpdateProgressBar routines
+        - Change the .onAddArticles routine:
+            -- Remove function articleListen
+            -- Instead of building an article checkbox, fill in a cloned article template
+        - Add the onUpdateMaxDate routine to update the date picker's maximum value after each date to process has been processed
+        - Remove the onEnableStartButton routine
+    Change preload.js
+        - Get datesToProcess and maxPickableDate values from the process.argv array and those values available to the renderer process
+        - Remove unused send channels from the whitelist and add channels 'AOT' and 'openTP'
+        - Remove the ipcrenderer.on definitions: onAddThrobber, onCreateProgressBar, onUpdateProgressBar and onEnableStartButton:
+    Add tpScrape.js
+        - It includes the code from function sectionScrape that collects information from the Today's Paper page, but not the code that creates table HTML. In the included code, Cheerio function are replaced by Javascript functions.
+         - tpScrape.js is accessed by the tpScrape userscript via require.
+    Add the tpScrape userscript.
+    Change artScrape.javascript
+        - Document the return object
+    
+
 2/14/2025
     Handle captcha pages
-    Change Scrape.user.js
+    Change Scrape.user.js 
         - If a page has only 1 iFrame, it's a captcha page. Send an object with ID: 'captcha' to the recipe-scraper application
     Change current.js
         - In function requestListener:

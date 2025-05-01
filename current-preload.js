@@ -7,14 +7,22 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
+// Extract additional arguments
+let arg = process.argv.filter(p => p.indexOf('--datesToProcess=') >= 0)[0]
+const datesToProcessString = arg.substring(arg.indexOf('=') + 1)
+arg = process.argv.filter(p => p.indexOf('--maxPickableDate=') >= 0)[0]
+const maxPickableDate = arg.substring(arg.indexOf('=') + 1)
+
 // Define functions to be exposed to the renderer process
 contextBridge.exposeInMainWorld(
   'scraper',
   {
+    datesToProcessString,
+    maxPickableDate,
     send: (channel, data) => {
       // whitelist channels
-      const validChannels = ['process-date', 'submitted', 'continue', 'article-click',
-        'added', 'created', 'button-action']
+      const validChannels = ['process-date', 'submitted', 'continue',
+        'button-action', 'openTP', 'AOT']
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, data)
       }
@@ -25,14 +33,8 @@ contextBridge.exposeInMainWorld(
     onRemoveMsgs: (fn) => {
       ipcRenderer.on('remove-msgs', (event, ...args) => fn(...args))
     },
-    onAddThrobber: (fn) => {
-      ipcRenderer.on('add-throbber', (event, ...args) => fn(...args))
-    },
-    onCreateProgressBar: (fn) => {
-      ipcRenderer.on('create-progressbar', (event, ...args) => fn(...args))
-    },
-    onUpdateProgressBar: (fn) => {
-      ipcRenderer.on('update-progressbar', (event, ...args) => fn(...args))
+    onUpdateMaxDate: (fn) => {
+      ipcRenderer.on('update-maxdate', (event, ...args) => fn(...args))
     },
     onAddButton: (fn) => {
       ipcRenderer.on('add-button', (event, ...args) => fn(event, ...args))
@@ -58,12 +60,12 @@ contextBridge.exposeInMainWorld(
     onRemoveLastMsg: (fn) => {
       ipcRenderer.on('remove-lastMsg', (event, ...args) => fn(...args))
     },
-    onEnableStartButton: (fn) => {
-      ipcRenderer.on('enable-start', (event, ...args) => fn(...args))
+    onRemoveDates: (fn) => {
+      ipcRenderer.on('remove-dates', (event, ...args) => fn(...args))
     },
     added: () => ipcRenderer.send('added'),
     articleClick: (action, href) => ipcRenderer.send('article-click', action, href),
-    submitted: (indices) => ipcRenderer.send('submitted', indices),
+    review: (indices) => ipcRenderer.send('review', indices),
     created: () => ipcRenderer.send('created')
   }
 )

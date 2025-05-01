@@ -5,44 +5,52 @@
     <title>NYT Recipe Scrape</title>
     <link rel="stylesheet" href="spectre.min.css">
     <link rel="stylesheet" href="ScraperStyles.css">
-    <!--
-    <style>
-      .author {font-size: .6rem;}
-      p {margin-bottom: 0px}
-    </style>
-    -->
   </head>
   <body>
-    <div style="padding-top: 1rem; padding-left: 2rem;">
-      <form>
-        <div class="container pb-2 pl-0">
+
+    <template id="articleTemplate">
+      <label class="form-checkbox", id="li#">
+        <input type="checkbox" name="cbn#" value="#" id="cbi#">
+        <i class="form-icon"></i>
+        <div class="article"></div>
+        <div class="text-gray author"></div>
+      </label>
+    </template>
+
+    <div class="outer">
+      <div style="padding-top: 1rem; padding-left: 2rem;">
+        <div class="container">
           <div class="columns col-oneline">
-              <div class="column col-3">      
-                <input class="form-input" type="date" id="dateSpec" name="dateSpec" step="any">
-              </div>
-              <div class="column col-1">
-                <button class="btn" type="submit" id="startButton">Start</button>
-              </div>
+            <div class="column col-auto col-mx-auto" id="datesDiv">
+              <ul id="datesList">
+              </ul>
+            </div>
+            <div class="divider-vert" data-content="OR"></div>
+            <div class="column col-auto col-mx-auto" style="display: flex; align-items: center;">   
+              <input class="form-input" type="date" id="dateSpec" name="dateSpec" step="any">
+            </div>
           </div>
         </div>
-      </form>
-      <div id="msgs" class="bg-secondary" style="overflow: hidden"></div>
-      <div id="progressBar" class="bg-secondary" style="overflow: hidden"></div>
-      <div class="clearfix"></div>
-      <form name="articleList" id="aList" class="pt-2">
-        <div class="form-group" id="aL">
+        <div class="divider"></div>
+        <div id="msgs" class="bg-secondary" style="overflow: hidden"></div>
+        <form name="articleList" id="aList" class="pt-2">
+          <div class="form-group" id="aL">
+          </div>
+        </form>
+        <p id="alP"></p>
+        <div id="buttons" class="mb-2">
         </div>
-      </form>
-      <p id="alP"></p>
-      <div id="buttons" class="mb-2">
+        <div id="tableDiv">
+          <table><tbody id='tableCompare'></tbody></table>
+        </div>
       </div>
-      <div id="tableDiv">
-        <table><tbody id='tableCompare'></tbody></table>
-      </div>  
+      <div class="buttonDiv">
+        <button class="btn disabled" id="reviewButton">Review</button>
+      </div> 
     </div>
-    <div>
+    <!-- </div>
       <p>&nbsp; </p>
-    </div>
+    </div>] -->
     <script src='./current-renderer.js'></script>
   </body>
 </html>

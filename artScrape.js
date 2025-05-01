@@ -5,6 +5,16 @@
 // Function nameDiffersFromURL is called by function artScrape and by function sectionScrape in current.js.
 // Function artScrape is called by the Tampermonkey userscript Scrape.
 
+// Data structures
+//
+// returnObj {
+//  ID: "artInfo",
+//  hasRecipes: boolean,
+//  recipeList: [{ name: string, link: string, inconsistency: booolean } ...],
+//  titleInfo: { title: string, arttype: string, ATDPresent: boolean },
+//  url: string
+// }
+
 // eslint-disable-next-line no-unused-vars
 function nameDiffersFromURL (originalName, href) {
   // For links to cooking.nytimes.com/recipes/, see if the link text is consistent with the recipe name part of the link URL
@@ -13,6 +23,10 @@ function nameDiffersFromURL (originalName, href) {
   // Input -  recipe name <string>
   //          cooking.nytimes.com URL <string>
   // Output - boolean, true if name differs from URL
+
+  if (!href.includes('cooking.nytimes.com')) {
+    return false // This applies only to cooking.nytimes.com URLs
+  }
 
   function consistencyCheck (nameArray, urlArray) {
     // Perform the test that determines if the recipe name text is consistent with the recipe URL.

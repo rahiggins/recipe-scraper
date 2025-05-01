@@ -1,13 +1,16 @@
 /.DS_Store
+/fonts
 /index-test.html
 /node_modules
 /package-lock.json
+branch-plan.txt
 eslintrc.json
 problems.txt
 commit.txt
 spectre.min.css
 recipe-scraper.png
 recipe-scraper.svg
+tbl-ed.js
 /.vscode
 *.bak
 /ephemera

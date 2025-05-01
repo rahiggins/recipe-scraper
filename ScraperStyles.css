@@ -1,2 +1,28 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  height: 100vh;
+  width: 100vw;
+}
+* {
+  box-sizing: border-box;
+}
+div.outer {
+  height: 100%;
+  width: 100%;
+  display: flex; 
+  flex-direction: column;
+}
+div.buttonDiv {
+  margin-top: auto;
+  padding-left: 2rem;
+  padding-bottom: 1rem;
+}
 .author {font-size: .6rem;}
 p.msg {margin-bottom: 0px}
+ul {
+  list-style-type: none;
+}

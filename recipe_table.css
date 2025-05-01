@@ -1,0 +1,166 @@
+@font-face {
+  font-family: 'nyt-cheltenham-BoldItalic';
+  src: url('./fonts/cheltenham-italic-700-webfont.woff2') format('woff2'),
+       url('./fonts/cheltenham-italic-700-webfont.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+
+}
+
+@font-face {
+  font-family: 'nyt-imperial-Bold';
+  src: url('./fonts/imperial-normal-700-webfont.woff2') format('woff2'),
+       url('./fonts/imperial-normal-700-webfont.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'nyt-imperial-Regular';
+  src: url('./fonts/imperial-normal-500-webfont.woff2') format('woff2'),
+       url('./fonts/imperial-normal-500-webfont.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'nyt-cheltenham-regular';
+  src: url('./fonts/nyt-cheltenham-regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+table {
+  border-collapse: collapse;
+  float: left;
+  width: fit-content;
+  margin-left: 20px;
+}
+
+table, th, td {
+  border: 1px solid Gainsboro;
+}
+
+th, td {
+  font-family: nyt-imperial-Regular;
+  text-align: left;
+  vertical-align: middle;
+  padding-top: 3px;
+  padding-right: 7px;
+  padding-bottom: 3px;
+  padding-left: 5px;
+  font-size: 15px;
+}
+
+td.date {
+  width: 73px;
+}
+
+td.type {
+  width: 18px;
+}
+
+td.name {
+  width: fit-content;
+}
+
+ul {
+  list-style-type: none;
+  padding: 0px;
+  width: -moz-fit-content;
+  float: right;
+}
+
+div.header {
+  display: block;
+  font-family: nyt-cheltenham-BoldItalic, Arial;
+  font-size: 29pt;
+  text-align: center;
+}
+
+div.container {
+  width: 100%;
+  height: auto;
+  overflow: auto;
+}
+
+div.years {
+  font-family: nyt-imperial-Regular;
+  width: 5%;
+  min-width: 45px;
+  height: 100%;
+  position: fixed;
+  font-size: 15px;
+}
+
+div.years-inner {
+  position: relative;
+  margin-right: 2px;
+}
+
+div.table {
+  position: relative;
+  left: 5%;
+  top: 0px;
+  width: 95%;
+  min-width: 750px;
+  height: 100%;
+}
+
+div.table-inner {
+  position: relative;
+  margin-left: 3%;
+}
+
+div.footer {
+  display: block;
+  width: 100%;
+}
+
+a {
+	text-decoration: none;
+	transition-property: color;
+	transition-duration: 0.4s;
+	transition-timing-function: ease;
+	transition-delay: 0s;
+	color: #265c83;
+}
+
+a:link, a:visited {
+   color: rgb(21, 104, 177);
+}
+
+@media (hover) {
+  a:hover {
+    color: rgb(251,102,47);
+  }
+}
+
+p.adt-head {
+  margin: 30px 40px 12px 40px; 
+  font-family: nyt-cheltenham-regular; 
+  font-size: 26px;
+  line-height: 1.875rem;
+  color: #121212
+}
+
+p.adt-body {
+  margin: 0px 40px 0px 40px;
+  font-family: nyt-imperial-Regular; 
+  font-size: 18px;
+  line-height: 1.5625rem;
+  color: #333333
+}
+
+span.adt-eric {
+  font-family: nyt-imperial-Bold; 
+  font-size: 18px;
+}
+
+span.inconsistent {
+  color: red;
+}
+
+strong { 
+  font-family: 'nyt-imperial-Bold';
+}
