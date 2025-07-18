@@ -1,4 +1,52 @@
-4/24/2025
+7/?/2025
+    manual click branch, leverage Cheerio
+    Change current.js
+        - Packages puppeteer and needle are no longer used.
+        - Define a Cheerio query function, $rowTemplate, based on '<tr><td></td><td></td><td></td></tr>'.
+        - Instead of setting saveLastDate true in function Mainline when there are dates to process, set saveLastDate true in on.'openTP' and set it false in on.'review' when lastDate.txt has been saved.
+        - function requestListener
+            -- Remove captcha processing
+        - function dayCompare
+            -- The function's arguments have changed: instead of strings containing new and old table HTML, the arguments are Cheerio query functions based on the new DOM elements and the old table HTML
+            -- Delete the rowText function. Instead, the Cheerio extension function tableText is used to compare the new and old table contents.
+            -- Clone the new DOM elements Cheerio query function. Old table rows not in the new table will be merged into the clone. Those rows and new table rows not in the old table are colored in the clone. The clone is used to display the table comparison.
+            -- Remove code related to the diffHTML debugging aid.
+            -- Change the object returned by the dayCompare function: replace the mergedHTML property with mergedRows whose value if the cloned Cheerio query function (with the coloring removed).
+        - on.'review'
+            -- Move the definition of variables tpDate and tpYear to the beginning of the on.'review' block so their scope is the entire block
+            -- If there were checked articles...
+                --- Eliminate the rowHTML variable. 
+                --- Instead, create a Cheerio query function, $newDay, based on '<table></table>. For each table row returned by the function review, clone the <tr> element of the $rowTemplate Cheerio function. Assign the returned row content to the clone and append the clone to the <table> element of the $newDay Cheerio query function.
+                --- When existing table HTML for the date exists in the Days folder, before calling function dayCompare, create a Cheerio query function, $existingDay, based on the existing table HTML. Call function dayCompare with $newDay and $existingDay as parameters, instead of strings of HTML.
+                --- On return from function dayCompare, if the merge action was selected, assign the compareResults.mergedRows value to $newDay.
+                --- If the index.html file is to be updated, use the Cheerio extension function formatHTML to log the new day's table HTML.
+                --- Call function updateIndexHTML with parameter $newDay in addition to tpDate, tpYear.
+            -- If there were no checked articles...
+                --- Call function updateIndexHTML with parameter null in addition to tpDate, tpYear.
+                --- Tell the renderer to remove all messages and display a message that there were no checked articles and index.html table rows related to the date were removed.
+            -- Move the lastDate.txt save out of the 'if (checkedArticleIndices.length > 0)' code blocks.
+        - function updateIndexHTML
+            -- Rewrite function updateIndexHTML
+                --- Load the index.html file into Cheerio and use the Cheerio method replaceWith to replace a day's table row with the table rows in the $newDay query function (or delete the day's table row if none of the day's articles contained recipes).
+    Change Scrape.user.js
+        - Remove check for captcha.
+    Change lib.js
+        - Require path and make use of path.join in function NewDays
+        - Add Cheerio extension functions tableText and formatHTML. Export both.
+        - function NewDays
+            -- Delete functions back2NL, findContent, distill.
+            -- Replace function addClassName with a Cheerio extension function.
+            -- Add function processDay.
+            -- Load the index.html file into a Cheerio query function ($year). Extract table rows from $year and iterate through them, constructing a Cheerio query function ($tmptbl) based on the table rows for a day by appending to $tmptbl rows from $year belonging to the same day. Use Cheerio extension function addClassName to ensure the first table row in $tmptbl includes class names.
+            -- Call function processDay when all of a day's rows have been appended to $tmptbl.
+            -- In function processDay if HTML for the day exists in the Days folder, load that HTML into a Cheerio query function ($day). Use the Cheerio extension fucntion tableText to compare $tmptbl to $day.
+            -- In function processDay, use Cheerio extension function formatHTML to create HTML from $tmptbl to write to the Days folder when the day doesn't exist in the Days folder or when $tmptbl and $day differ.
+    Change tpScrape.js
+        - Handle articles that don't have an author.
+    Change review.html and review-renderer.js
+        - Add an Embolden menu item to the row menu.
+
+4/24/2025 
     manual click branch, add review/edit window
     Add the fonts directory containing NYT fonts
     Add recipe-table.css, used by the reviewWindow

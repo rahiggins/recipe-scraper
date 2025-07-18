@@ -4,21 +4,20 @@
   "description": "Scrape recipes from nytimes.com",
   "main": "index.js",
   "scripts": {
-    "start": "electron .",
-    "tbled": "electron tbl-ed.js"
+    "start": "electron ."
   },
   "author": "Me",
   "license": "ISC",
   "dependencies": {
-    "bufferutil": "^4.0.8",
-    "cheerio": "^1.0.0-rc.12",
+    "bufferutil": "^4.0.9",
+    "cheerio": "^1.1.0",
     "cheerio-get-css-selector": "^2.0.0",
-    "electron": "^33.2.1",
+    "electron": "^36.4.0",
     "http": "^0.0.1-security",
     "moment": "^2.29.4",
-    "needle": "^3.2.0",
+    "needle": "^3.3.1",
     "newdays": "file:../newdays",
-    "puppeteer": "^23.11.1",
+    "puppeteer": "^24.10.1",
     "request": "^2.88.2",
     "spectre.css": "^0.5.9",
     "utf-8-validate": "^6.0.3"
