@@ -1,10 +1,13 @@
 // Functions shared by current-renderer.js and past-renderer.js
 //
+//  tableText   - Cheerion query function plugin, return the aggregated text content of <td> elements
+//  formatHTML  - Cheerion query function plugin, format table row HTML
 //  NewDays     - determine which days in index.html are new or updated
 //  Insert      - Invoke insert.php to update the local database
 //
 
 const fs = require('fs') // Filesystem functions
+const path = require('path') // Path functions
 const { BrowserWindow } = require('electron') // InterProcess Communications
 const cheerio = require('cheerio') // core jQuery
 
@@ -15,7 +18,7 @@ const cheerio = require('cheerio') // core jQuery
 //  table HTML in the local MySQL database and creates an insert/update file
 //  to import into the remote database.
 //
-// NewDays requires two arguments: a year (yyyy) and the msgs div element (msgDiv)
+// NewDays has one input parameter: the year being processed (yyyy)
 //
 // NewDays splits an NYT Recipes index.html file by day.
 //
@@ -32,16 +35,73 @@ const cheerio = require('cheerio') // core jQuery
 //   in the MAMP htdocs/inserts folder under the same name for use by the
 //   insert.php script.
 //
-//  If the two sets of table HTML differ, NewDays looks to see if only newline
-//   characters are different.  This condition should not occur if BlueGriffon
-//   is configured not to wrap long lines.
-//
-//  Otherwise, if the two sets of table HTML differ, NewDays renames the existing
+//  If the two sets of table HTML differ, NewDays renames the existing
 //   file in the Days folder as Old_yyyy-mm-dd.txt (replacing an existing
 //   Old_yyyy-mm-dd.txt) and stores the new HTML in the Days folder as
 //   yyyy-mm-dd.txt and in the MAMP htdocs/updates folder as yyyy-mm-dd.txt
 //   for use by the insert.php script.
 //
+
+// Cheerio plug-in functions
+
+// Return the aggregated text content of <td> elements
+function tableText ($) {
+  // Input - Cheerio query function
+  // this - Cheerio object containing <td> elements
+  // Output - concatentated text of the <td> elements with whitespace and newlines removed
+  let text = ''
+  this.each((i, element) => {
+    text += $(element).text().replaceAll('\n', '').trim()
+  })
+  return text
+}
+
+// Format table row HTML
+function formatHTML ($) {
+  // Input - Cheerio query function
+  // this - Cheerio object containing the table elements
+  // Output - formatted HTML
+  if (this.length > 0) {
+    // Return the Cheerio object's HTML with the following changes:
+    // 1. Insert a newline after the tbody tag
+    // 2. Delete a newline and following spaces, unless the spaces are followed by a tag
+    // 3. Add a newline between adjacent end tags and start tags unless the start tag is <a> or <br>
+    // 4. Replace multiple succesive newlines with a single newline
+    // 5. Add a newline before </td> tags when the tags are preceded by non-whitespace characters
+    // 6. Indent the HTML for readability
+    // 7. Filter out tbody tags
+    return $(this).html().replace('<tbody>', '<tbody>\n')
+      .replaceAll(/\n\s*(?!\s*<)/g, '')
+      .replaceAll(/(<\/(?!\ba\b|\bbr\b).*?>)(?=(<))/g, '$1\n')
+      .replaceAll(/(<tr>)/g, '$1\n')
+      .replace(/\n+(?=\n)/g, '')
+      .replaceAll(/(\S+?)<\/td>/g, '$1\n</td>')
+      .split('\n')
+      .map((line) => {
+        line = line.trim()
+        const tag = line.match(/^<\/?(.*?)>/)[1]
+        switch (tag) {
+          case 'tr':
+            line = '              ' + line
+            break
+          case 'td':
+            line = '                ' + line
+            break
+          case 'br':
+            line = '                  ' + line
+            break
+          default:
+            line = '                ' + line
+        }
+        return line
+      })
+      .filter((line) => !line.match(/<\/?tbody>/))
+      .join('\n')
+  } else {
+    return $.html()
+  }
+}
+
 // function NewDays(yyyy, msgDiv, singleDate) {
 function NewDays (yyyy) {
   // Input: year (yyyy) of dates being processed
@@ -52,267 +112,129 @@ function NewDays (yyyy) {
   // console.log("NewDays entered with " + yyyy + " singleDate: " + singleDate);
   console.log('NewDays entered with ' + yyyy)
 
-  function back2NL (idx) {
-    // Called from NewDays
-    // Input: index of <tr> element
-    // Returns: index following the new line procedding the input <tr> element
-    // Back up from the <tr> element looking for CRLF or LF or CR
-
-    let nlIndex = -1
-    let nlLook = idx
-    while (nlIndex < 0) {
-      nlLook = nlLook - 2
-      nlIndex = table.substring(nlLook, idx).search(/\r\n|\n|\r/)
-    }
-    nlIndex = nlLook + nlIndex
-    const nlStr = table.substr(nlIndex, nlIndex + 3).match(/\r\n|\n|\r/)
-    return nlIndex + nlStr[0].length
-  }
-
-  function addClass (mk) {
-    // Called from NewDays
-    // Input: table HTML
-    // Returns:  updated table HTML
-    // In the first table row, add a class name to each of the three <td> elements
-    // This is needed because of the addition of the Month order fuction.  Should not be needed after 2020
-
-    if (mk.includes('class=')) { // Exit if the table HTML already contains class names
-      return mk
-    }
-    let idx = 0
-    const classes = ['date', 'type', 'name']
-    for (let i = 0; i <= 2; ++i) {
-      const classInsert = ' class="' + classes[i] + '"'
-      idx = mk.indexOf('<td', idx) + 3
-      mk = mk.slice(0, idx).concat(classInsert, mk.slice(idx))
-      idx += 3
-    }
-    return mk
-  }
-
-  function findContent (day) {
-    // Input: Table HTML for one day, extracted from index.html
-    // Returns: true or false
-    // Determine whether a day's table HTML has content, i.e. contains
-    //  a link that is not a link to a Today's Paper page.
-    //  Return true if so, false if otherwise.
-
-    let gotContent = false // return value, defaults to false
-
-    // Split the day's table HTML at '<a' and '</a'
-    // The resulting array elements alternate between irrelevant strings and
-    //   <a> attributes (including href), i.e.:
-    //   [irrelevant, <a> attributes, irrelevant, <a> attributes, ...]
-    // If the day's tab;e HTML does not contain any <a> elements, the resulting
-    //   array is [irrelevant]
-    const aAttrs = day.split(/<\/*a/g)
-
-    // For each <a> attribute element ...
-    for (let i = 1; i < aAttrs.length; i = i + 2) {
-      // console.log(i.toString() + ": " + aAttrs[i]);
-      if (!aAttrs[i].includes('/todayspaper/')) { // ... look for todayspaper
-        gotContent = true // not found, then the day has content
-        break // break out of for loop
+  // Cheerio extension function - add class names to a row's <td> elements
+  // Used to add class names to the first row of a day's table HTML
+  function addClassName ($) {
+    const classNames = ['date', 'type', 'name']
+    $('td', this).each((i, element) => {
+      if (!$(element).hasClass(classNames[i])) {
+        $(element).addClass(classNames[i])
       }
-    }
-    // console.log(gotContent)
-    return gotContent
-  }
-
-  function distill (markup) {
-    // Distill table HTML into an array of text strings
-
-    // Input: table HTML, i.e. <tr> and <td> elements
-    // Output: [string, string, …] where string is the concatenated text of the <td> elements
-    //          belonging to a <tr> element, stripped of whitespace and
-    //          with 'http:' replaced with 'https:'
-
-    const prefix = '<table>' // prepend to markup
-    const suffix = '</table>' // append to markup
-
-    // Create a Cheerio query function based on the input table HTML
-    const $ = cheerio.load(prefix + markup + suffix)
-
-    // Get a Cheerio array of table rows
-    const rows = $('tr')
-
-    // Initialize output array
-    const text = []
-
-    rows.each(function () {
-      // For each row,
-
-      // Get its <td> elements
-      const tds = $('td', this)
-
-      // rowText will be a concatenation of each <td> element's text
-      let rowText = ''
-
-      tds.each(function () {
-        // For each <td> element,
-
-        // Get its text, remove whitespace, replace 'http' and concatenate
-        //  the result to rowText
-        rowText += $(this).html().replace(/\s+/g, '').replace('http:', 'https:')
-      })
-
-      // Append the row's concatenated text to the output array
-      text.push(rowText)
     })
-
-    // return [row text, row text, ...]s
-    return text
   }
 
-  // Read the year's table HTML
-  const tablePath = '/Users/rahiggins/Sites/NYT Recipes/' + yyyy + '/index.html'
-  const table = fs.readFileSync(tablePath, 'UTF-8').toString()
+  // Process a day
+  function processDay () {
+    // See if the day exists in the Days folder. If not, store it in the Days folder and the inserts folder. If it does, and it differs, rename the existing file, store the new file in the Days folder and the updates folder.
 
-  const dateIndices = []
-  let tr = 0
-  let dateIndex = 0
-  let start = 0
-  let tbodyEndIndex = 0
-  let tbodyEndRowIndex = 0
-  const dates = table.match(/\d{2}\/\d{2}\/\d{4}/g) // Array of date (mm/dd/yyyy) strings in table HTML
+    // File names and paths
+    const fileName = YMD + '.txt' // YMD is YYYY-MM-DD
+    const oldName = 'Old_' + fileName
+    const oldFile = path.join(daysPath, oldName)
+    const dayFile = path.join(daysPath, fileName)
 
-  const end = table.length
+    if (fs.existsSync(dayFile)) {
+      // If that day's HTML file exists in the Days folder, see if the year's table HTML differs from it
 
-  // Scan the table HTML for 'mm/dd/yyyy' strings until </tbody> is encountered
-  // Find the index of the start of the line containing the <tr> element preceeding the 'mm/dd/yyy' string
-  // Push that index onto the dateIndices array
-  // eslint-disable-next-line no-labels
-  TableScan: while (start < end) {
-    dateIndex = table.substr(start).search(/\d{2}\/\d{2}\/\d{4}/)
-    if (dateIndex > 0) {
-      dateIndex = dateIndex + start
-      start = dateIndex + 10
-      tr = table.lastIndexOf('<tr>', dateIndex)
-      const dateRowIndex = back2NL(tr)
-      dateIndices.push(dateRowIndex)
-    } else {
-      tbodyEndIndex = table.substr(start).indexOf('</tbody>') + start
-      tbodyEndRowIndex = back2NL(tbodyEndIndex)
-      dateIndices.push(tbodyEndRowIndex)
-      // eslint-disable-next-line no-labels
-      break TableScan
-    }
-  }
+      // Load the Days folder table HTML into a Cheerio query function and add a plugin to the function
+      const dayHTML = fs.readFileSync(dayFile, 'utf8')
+      const $day = cheerio.load(`<table>${dayHTML}</table>`)
+      $day.prototype.tableText = tableText
 
-  const lastIndex = dateIndices.length - 1
-  // const prolog = table.substring(0,dateIndices[0]);
-  // const epilog = table.substring(dateIndices[lastIndex]);
-  let dayMarkup = ''
-  let keys = []
-
-  const daysPath = '/Users/rahiggins/Sites/NYT Recipes/' + yyyy + '/Days/' // Directory containing day segments
-  const insertPath = '/Applications/MAMP/htdocs/inserts/' // Directory containing day segments to be inserted
-  const updatePath = '/Applications/MAMP/htdocs/updates/' // Directory containing day segments for update
-  // const newLineChars = '\n\r'
-
-  // Function return value defaults to false
-  let callInsert = false
-
-  // Segment table HTML by day
-  for (let i = 0; i < lastIndex; i++) {
-    dayMarkup = table.substring(dateIndices[i], dateIndices[i + 1])
-
-    if (findContent(dayMarkup)) {
-      // If this day's segment has content (links to other than Today's Paper):
-      //  See if a segment for the day already exists in daysPath
-      //  If a segment already exists, see if they're identical
-      //  If they're not identical, add the new segment to updatePath
-      //  If a segment for the day doesn't already exist in daysPath,
-      //    add it to daysPath and to insertPath
-      //  If a segment was added to updatePath or insertPath,
-      //    set callInsert to true
-
-      // Add class names to first row's <td> elements
-      dayMarkup = addClass(dayMarkup)
-
-      // Remove '<meta charset="utf-8">' lines added when HTML is pasted in BlueGriffon
-      dayMarkup = dayMarkup.replace(/(\r\n|\n|\r)\s+<meta charset="utf-8">(\r\n|\n|\r)\s+/g, ' ')
-
-      keys = dates[i].split('/') // Split date into [mm, dd, yyyy]
-      const fileName = keys[2] + '-' + keys[0] + '-' + keys[1] + '.txt'
-      if (fs.existsSync(daysPath + fileName)) {
-        // The day's table HTML already exists in the Days folder
-        // console.log(fileName + " exists");
-        const existing = fs.readFileSync(daysPath + fileName, 'UTF-8').toString()
-        if (existing === dayMarkup) {
-          // The previously stored table HTML is identical to the generated table HTML
-          console.log('Both ' + fileName + ' are the same')
-        } else {
-          // The previously stored table HTML differs from the generated table HTML.
-          //  See if the difference is only in whitespace or 'http' instead of 'https'.
-          //  Try both a fancy 'distill' comparison and a simple replacement comparison
-          console.log('Both ' + fileName + ' are not the same')
-          let diff = true
-          if (JSON.stringify(distill(existing)) === JSON.stringify(distill(dayMarkup))) {
-            console.log('Distilled ' + fileName + ' are equal')
-            diff = false
-          }
-          if (existing.replace(/\s+/g, '').replace('http:', 'https:') === dayMarkup.replace(/\s+/g, '').replace('http:', 'https:')) {
-            console.log('Simple whitespace stripped ' + fileName + ' are equal')
-            diff = false
-          }
-          // Used to have a problem with BlueGriffon changing newline codes. This probably isn't needed any more
-          // var diff = false;
-          // if (existing.length == dayMarkup.length) {
-          //     var scanLength = dayMarkup.length;
-          //     var misMatch = false;
-          //     for (var j = 0; j < scanLength; j++) {
-          //         if (existing[j] !== dayMarkup[j]) {
-          //             if (newLineChars.includes(existing[j]) && newLineChars.includes(dayMarkup[j])) {
-          //                 console.log("Newline mismatch at " + j.toString() + " for " + fileName);
-          //                 misMatch = true;
-          //             } else {
-          //                 diff = true;
-          //                 break;
-          //             }
-          //         }
-          //     }
-          //     if (misMatch) {
-          //         fs.writeFileSync(daysPath + fileName, dayMarkup, "utf8");
-          //         console.log(fileName + " replaced in Days");
-          //     }
-          // } else {
-          //     diff = true;
-          // }
-
-          if (diff) {
-            console.log(fileName + ' differs, added to updates')
-
-            // Existing day file has changed
-            global.win.webContents.send('display-msg', fileName + ' differs, added to updates', { indent: true })
-
-            // Existing file will be renamed to Old_file
-            const oldName = 'Old_' + fileName
-
-            // If Old_file already exists, delete it
-            if ((fs.existsSync(daysPath + oldName))) {
-              fs.unlinkSync(daysPath + oldName)
-            }
-            // Rename existing file to Old_file
-            fs.renameSync(daysPath + fileName, daysPath + oldName)
-
-            // Write updated file to Days
-            fs.writeFileSync(daysPath + fileName, dayMarkup, 'utf8')
-
-            // Write updated file to updates
-            fs.writeFileSync(updatePath + fileName, dayMarkup, 'utf8')
-
-            // Set flag to call insert.php
-            callInsert = true
-          }
-        }
+      if ($tmptbl('td').tableText($tmptbl) === $day('td').tableText($day)) {
+        console.log(`Both ${fileName} are the same`)
       } else {
-        global.win.webContents.send('display-msg', fileName + ' added to inserts', { indent: true })
-        fs.writeFileSync(daysPath + fileName, dayMarkup, 'utf8')
-        fs.writeFileSync(insertPath + fileName, dayMarkup, 'utf8')
+        console.log(`${fileName} differs, added to updates`)
+
+        console.log('New HTML:')
+        console.log($tmptbl('td').tableText($tmptbl))
+        console.log('---------')
+        console.log('Existing HTML:')
+        console.log($day('td').tableText($day))
+
+        global.win.webContents.send('display-msg', `${fileName} differs, added to updates`, { indent: true })
+
+        // Existing file will be renamed to Old_file
+        if (fs.existsSync(oldFile)) {
+          // If Old_file already exists, delete it
+          fs.unlinkSync(oldFile)
+        }
+        // Rename existing file to Old_file
+        fs.renameSync(dayFile, oldFile)
+
+        // Format the day's table HTML
+        const dayHTML = $tmptbl('table').formatHTML($tmptbl)
+
+        // Write updated file to Days
+        fs.writeFileSync(dayFile, dayHTML, 'utf8')
+
+        // Write updated file to updates
+        fs.writeFileSync(path.join(updatePath, fileName), dayHTML, 'utf8')
+
+        // Set flag to call insert.php
         callInsert = true
       }
+    } else {
+      // The day's HTML file is not in the Days folder, so create it
+      global.win.webContents.send('display-msg', `${fileName} added to inserts`, { indent: true })
+      const dayHTML = $tmptbl('table').formatHTML($tmptbl)
+      fs.writeFileSync(dayFile, dayHTML, 'utf8')
+      fs.writeFileSync(path.join(insertPath, fileName), dayHTML, 'utf8')
+      callInsert = true
     }
+  }
+
+  const yearPath = path.join('/Users/rahiggins/Sites/NYT Recipes', yyyy) // The year's folder
+  const tablePath = path.join(yearPath, '/index.html') // The year's table HTML
+  const daysPath = path.join(yearPath, 'Days') // Directory containing day segments
+  const insertPath = '/Applications/MAMP/htdocs/inserts/' // Directory containing day segments to be inserted
+  const updatePath = '/Applications/MAMP/htdocs/updates/' // Directory containing day segments for update
+
+  // Load the year's table HTML into a Cheerio query function and add plugins to the function
+  const table = fs.readFileSync(tablePath, 'UTF-8').toString()
+  const $year = cheerio.load(table)
+  $year.prototype.formatHTML = formatHTML
+  $year.prototype.tableText = tableText
+
+  // Compare each day in the year's table HTML to the corresponding day's table HTML in the Days folder
+  let notFirst = false // First date is handled differently from the rest
+  let $tmptbl // Cheerio queery function for a day in the year'as table HTML
+  let YMD // YYYY-MM-DD date string
+  let callInsert = false // Flag to call insert.php
+
+  const trs = $year('tr') // All table rows in the year'as table HTML
+  for (const tr of trs) {
+    // For each table row ...
+    const date = $year('td', tr).eq(0).text().trim() // Text content of the row's date cell
+    if (notFirst && date !== '') {
+      // For the start of a new day that's not the first day of the year, first ...
+      processDay() // Process the previous day
+      // Initialize a new day
+      YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2')
+      $tmptbl = cheerio.load('<table></table>')
+      $tmptbl.prototype.tableText = tableText
+      $tmptbl.prototype.formatHTML = formatHTML
+      $tmptbl.prototype.addClassName = addClassName
+    } else if (!notFirst && date !== '') {
+      // For the first date of the year, initialize a new day
+      YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2') // The new day's date as YYYY-MM-DD
+      $tmptbl = cheerio.load('<table></table>') // Create a new Ceerio query function for the new day
+      $tmptbl.prototype.tableText = tableText // Add plugins to the new Cheerio query function
+      $tmptbl.prototype.formatHTML = formatHTML
+      $tmptbl.prototype.addClassName = addClassName
+      $tmptbl(tr).addClassName($tmptbl) // Add class names to first row's <td> elements
+      notFirst = true
+    } else if ($year('td', tr).tableText($year) === '') {
+      // If the row is empty, there are no more days with content to process in the year, so exit this loop
+      YMD = '' // Indicate that the loop was terminated before the end of the year
+      break
+    }
+    // Add the row to the day's table
+    $tmptbl('table').append(tr)
+  }
+  if (YMD !== '') {
+    // If the loop reached the end of the year ...
+    processDay() // Process the last day
   }
 
   // Exit from NewDays
@@ -353,4 +275,4 @@ function Insert () {
   })
 }
 
-module.exports = { NewDays, Insert }
+module.exports = { tableText, formatHTML, NewDays, Insert }

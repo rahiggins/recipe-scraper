@@ -9,7 +9,7 @@
 
 // The recipe-scraper application formats the information sent by the userscripts as table HTML. It displays the table entries for review and editing. It then adds the entries to the year's index.html file. It also adds the day's entries to the local NYTArticles dagtabase and creates SQL statements to add the entries to the remote NYTArticles database.
 
-// manual click version 3.1.0
+// manual click version 3.2.0
 
 // Code structure:
 //
@@ -133,13 +133,11 @@
 // }
 //
 
-const { NewDays, Insert } = require('./lib.js') // Shared scraper functions
+const { tableText, formatHTML, NewDays, Insert } = require('./lib.js') // Shared scraper functions
 const { app, ipcMain, BrowserWindow } = require('electron') // InterProcess Communications
 const path = require('path')
 const Moment = require('moment') // Date/time functions
 const fs = require('fs') // Filesystem functions
-const puppeteer = require('puppeteer') // Chrome API
-const needle = require('needle') // Lightweight HTTP client
 const cheerio = require('cheerio') // core jQuery
 const http = require('http') // HTTP protocol
 const { spawn } = require('node:child_process') // Execute shell commands
@@ -156,6 +154,7 @@ let articleInfoObjArray // Array of article info objects composed of objects ret
 
 let newTableHTML = '' // Generated table HTML is appended to this
 const NYTRecipesPath = '/Users/rahiggins/Sites/NYT Recipes/'
+const $rowTemplate = cheerio.load('<tr><td></td><td></td><td></td></tr>', null, false)
 
 const URLStartCurrent = 'https://www.nytimes.com/issue/todayspaper/' // Today's Paper URL current prefix
 const URLStartPast = 'https://www.nytimes.com/indexes/' // Today's Paper URL past prefix
@@ -167,12 +166,7 @@ let dateEntered = false // Set to true in 'process-date'
 
 const debug = true
 let sect // Magazine | Food
-let browser // Puppeteer browser
-let page // Puppeteer page
 let firstArticle = true // true for first article of a date being processed sent by userscript Scrape
-
-let captchaDisplayed = false
-let pages // Puppeteer pages when captcha is displayed
 
 // Function definitions
 
@@ -180,40 +174,6 @@ function Log (text) {
   // If debugging, write text to console.log
   if (debug) {
     console.log(text)
-  }
-}
-
-async function connectPup () {
-  // Connect Puppeteer to an existing instance of Chrome that is logged in
-  //  to nytimes.com and create a new page
-  // Called from createWindow in Mainline
-
-  console.log('connectPup: entered')
-
-  // If already connected to Chrome, just exit
-  if (typeof browser !== 'undefined') {
-    if (browser.isConnected()) {
-      console.log('Already connected')
-      return 0
-    }
-  }
-
-  // Try to obtain the remote-debugging Chrome endpoint.  If successful, connect
-  //  puppeteer to the remote-debugging instance of Chrome, create a new page
-  //  and return 0. If unsuccessful, return -1, terminating the application.
-  const url = 'http://127.0.0.1:9222/json/version'
-  try {
-    const resp = await needle('get', url)
-    Log(resp.body.webSocketDebuggerUrl)
-    browser = await puppeteer.connect({
-      browserWSEndpoint: resp.body.webSocketDebuggerUrl
-    })
-
-    console.log('connectPup: exiting')
-    return 0
-  } catch (e) {
-    console.error('Unable to obtain webSocketDebuggerUrl: ' + e.code)
-    return -1
   }
 }
 
@@ -334,20 +294,7 @@ async function requestListener (req, res) {
 
       case 'artInfo':
         // Handle an article info object
-        if (captchaDisplayed) {
-          // If a captcha was previously displayed, remove the 'catcha displayed' message
-          global.win.webContents.send('remove-lastMsg')
-          captchaDisplayed = false
-        }
         artInfo(postObj)
-        break
-
-      case 'captcha':
-        // Handle a captcha page
-        global.win.webContents.send('display-msg', 'Captcha displayed')
-        captchaDisplayed = true
-        pages = await browser.pages()
-        await pages[pages.length - 1].bringToFront() // Focus on the last tab
         break
 
       default:
@@ -449,104 +396,63 @@ function review (checkedArticleIndices) {
   })
 }
 
-function updateIndexHTML (date, year) {
-  // Called from Mainline
-  // Input: [Moment(first date), Moment(last date)]
-  // Returns: true if update performed, false otherwise
-  // Replace empty table rows in ~/Sites/NYT Recipes/yyyy/index.html corresponding with new days' table HTML
+function updateIndexHTML (date, year, arg) {
+  // Called from Mainline on.'review'
+  // Input:  - the date being processed as MM/DD/YYYY
+  //         - the year being processed as YYYY
+  //         - A Cheerio qery function based on a table of a day's articles and recipes,
+  //           or null if there are no recipes for the day
+  // Returns: true
+  // Replace the day's table rows in ~/Sites/NYT Recipes/yyyy/index.html with the input table rows,
+  // or if there are no recipes for the day, remove the day's table rows from index.html
 
-  // let errmsg; // Error message
-  // const year = dates[0].format('YYYY')
+  let doReplacement = true
+  let $
+  if (arg) {
+    // arg is a Cheerio query function
+    $ = arg
+  } else {
+    // arg is null - there are no recipes for the day
+    doReplacement = false
+  }
   const tablePath = path.join(NYTRecipesPath, year, 'index.html')
   const table = fs.readFileSync(tablePath, 'UTF-8').toString() // Read year page
-  // const newTableHTML = fs.readFileSync(output, "UTF-8").toString();   // Read new table HTML created by this app (diagnostic)
-  const tableLastIndex = table.length - 1
 
-  // Find beginning date
-  console.log('Finding start of replace')
-  const startDateIndex = table.indexOf(date)
-  if (startDateIndex === -1) {
-    // console.error('updateIndexHTML: first date ' + dates[0].format('MM/DD/YYYY') + ' not found in index.html')
-    console.error('updateIndexHTML: first date ' + date + ' not found in index.html')
-    return false
-  }
-  // console.log("startDateIndex: " + startDateIndex.toString());
+  // Load the year's table into Cheerio
+  const $year = cheerio.load(table)
+  $year.prototype.tableText = tableText
 
-  // Find the </tr> or <tbody> preceeding the first date
-  let trEndLength = 5
-  let trEndBeforeStartDateIndex = table.lastIndexOf('</tr>', startDateIndex)
-  if (trEndBeforeStartDateIndex === -1) {
-    trEndLength = 7
-    trEndBeforeStartDateIndex = table.lastIndexOf('<tbody>', startDateIndex)
-  }
-  if (trEndBeforeStartDateIndex === -1) {
-    console.error('updateIndexHTML: unable to find </tr> or <tbody> preceding ' + date)
-    return false
-  }
-  console.log('trEndBeforeStartDateIndex: ' + trEndBeforeStartDateIndex.toString())
-
-  // Find the newline character between the </tr>|<tbody> element and the beginning date
-  const nlAfterTrEndBeforeStartDateIndexIndex = table.substr(trEndBeforeStartDateIndex, trEndLength + 2).search(/\r\n|\n|\r/)
-  if (nlAfterTrEndBeforeStartDateIndexIndex === -1) {
-    console.error('updateIndexHTML: unable to find newline following trEndBeforeStartDateIndex')
-    return false
-  }
-  // console.log("nlAfterTrEndBeforeStartDateIndexIndex: " + nlAfterTrEndBeforeStartDateIndexIndex.toString())
-
-  // The index following the newline character(s) is where the replacement starts
-  const nlAfterTrEndBeforeStartDateIndex = table.substr(trEndBeforeStartDateIndex + nlAfterTrEndBeforeStartDateIndexIndex, 2).match(/\r\n|\n|\r/)
-  // console.log("nlAfterTrEndBeforeStartDateIndex: " + nlAfterTrEndBeforeStartDateIndex.toString())
-  const replaceStartIndex = trEndBeforeStartDateIndex + nlAfterTrEndBeforeStartDateIndexIndex + nlAfterTrEndBeforeStartDateIndex[0].length
-  // console.log("updateIndexHTML: replaceStartIndex: " + replaceStartIndex.toString());
-
-  // Find the ending date
-  const endDateIndex = table.indexOf(date)
-  if (endDateIndex === -1) {
-    console.error('updateIndexHTML: last date ' + date + ' not found in index.html')
-    return false
-  }
-  console.log('endDateIndex: ' + endDateIndex.toString())
-
-  // Find the date following the ending date or </tbody>
-  let nextDateAfterEndDateIndex = table.substr(endDateIndex + 10).search(/\d\d\/\d\d\/\d\d\d\d/)
-  console.log('nextDateAfterEndDateIndex search result: ' + nextDateAfterEndDateIndex.toString())
-  if (nextDateAfterEndDateIndex === -1) {
-    nextDateAfterEndDateIndex = table.indexOf('</tbody', endDateIndex)
-    console.log('nextDateAfterEndDateIndex indexOf result: ' + nextDateAfterEndDateIndex.toString())
-    if (nextDateAfterEndDateIndex === -1) {
-      console.error('updateIndexHTML: unable to find MM/DD/YYYY or </tbody following ' + date)
-      return false
+  // Find the row corresponding to the input date - the target row
+  const trs = $year('tr')
+  const targetRow = trs.filter((i, tr) => {
+    return $year('td', tr).eq(0).text().trim() === date
+  })
+  if (targetRow.length > 0) {
+    // If the target row was found, replace (or remove) it
+    targetRow.attr('data-replace', 'true') // Mark the target row for replacement or removal
+    let nextRow = targetRow.next()
+    while (nextRow && $year('td', nextRow).eq(0).text().trim() === '') {
+      // Remove rows following the target row until the next date row
+      nextRow.remove()
+      nextRow = targetRow.next()
     }
+
+    if (doReplacement) {
+      // Replace the target row in the year's table with the input table rows
+      $year('tr[data-replace]').replaceWith($('table').formatHTML($))
+    } else {
+      // Or remove the target row because there are no recipes for the day
+      $year('tr[data-replace]').remove()
+    }
+
+    // Write the updated table back to disk
+    const yearHTML = $year.html() // .replaceWith() and/or .remove() seem to leave HTML fragments; fix them
+      .replace(/(\n) {15,}(<tr>)/, '$1              $2') // Enforce 14 spaces from newline to <tr>
+      .replace(/\n +(\n +)/, '$1') // Replace 2 newlines with 1 newline, the second one
+    fs.writeFileSync(tablePath, yearHTML, 'utf8')
   } else {
-    nextDateAfterEndDateIndex = nextDateAfterEndDateIndex + endDateIndex + 10
+    console.log('No row found for ' + date)
   }
-  console.log('updateIndexHTML: MM/DD/YYYY or </tbody following ' + date + ': ' + nextDateAfterEndDateIndex.toString())
-
-  // Find the </tr> element preceeding the next date or </tbody>
-  const trEndBeforeNextDateAfterEndDateIndex = table.lastIndexOf('</tr>', nextDateAfterEndDateIndex)
-  if (trEndBeforeNextDateAfterEndDateIndex === -1) {
-    console.error('updateIndexHTML: unable to find </tr> preceding MM/DD/YYYY or </tbody')
-    return false
-  }
-  console.log('updateIndexHTML: trEndBeforeNextDateAfterEndDateIndex: ' + trEndBeforeNextDateAfterEndDateIndex.toString())
-
-  // Find the newline character(s) follow the </tr> element
-  const nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex = table.substr(trEndBeforeNextDateAfterEndDateIndex, 7).search(/\r\n|\n|\r/)
-  if (nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex === -1) {
-    console.error('updateIndexHTML: unable to find newline following trEndBeforeNextDateAfterEndDateIndex')
-    return false
-  }
-  console.log('updateIndexHTML: (nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex: ' + nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex.toString())
-
-  // The index following the newline character(s) is the replacement ends
-  const nlAfterTrEndBeforeNextDateAfterEndDateIndex = table.substr(trEndBeforeNextDateAfterEndDateIndex + nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex, 2).match(/\r\n|\n|\r/)
-  console.log('updateIndexHTML: nlAfterTrEndBeforeNextDateAfterEndDateIndex: ' + nlAfterTrEndBeforeNextDateAfterEndDateIndex.toString())
-  const replaceEndIndex = trEndBeforeNextDateAfterEndDateIndex + nlAfterTrEndBeforeNextDateAfterEndDateIndexIndex + nlAfterTrEndBeforeNextDateAfterEndDateIndex[0].length
-  console.log('updateIndexHTML: replaceEndIndex: ' + replaceEndIndex.toString())
-  console.log('updateIndexHTML: insert between 0-' + replaceStartIndex.toString() + ' and ' + replaceEndIndex.toString() + '-' + tableLastIndex.toString())
-
-  // Replace ~/Sites/NYT Recipes/yyyy/index.html with the leading unchanged part + the new table HTML + the trailing unchanged part
-  fs.writeFileSync(tablePath, table.substring(0, replaceStartIndex) + newTableHTML + table.substring(replaceEndIndex, tableLastIndex), 'utf8')
   return true
 }
 
@@ -594,55 +500,27 @@ function checkExisting (date) {
   }
 }
 
-async function dayCompare (newTable, oldTable) {
-  // Compare two collections of HTML table rows, one (new) a transformation
-  //  (by adding and deleting rows) of the other (old)
-  // Identify the rows added and the rows deleted.
+async function dayCompare (new$, old$) {
+  // Called from on.review when the date picker was used to specify a date to process.
+  // Compare two collections of table rows, one (new), possibly a transformation
+  //  (by adding and deleting rows), of the other (old).
+  // Identify the rows added and the rows deleted and display the results of the comparison.
+  // If there are differences between the two collections, offer the following actions to be taken:
+  // - Discard the new collection
+  // - Replace the old collection with the new one
+  // - Merge the rows of the two collections and replace the old collection with the merged one
+  // Input: new$ - a Cheerion query function based on the current scrape of the a day's articles
+  //        old$ - a Cheerion query function based on the day's HTML stored in the Days folder
+  // Output: an object with keys:
+  //         action - the action requested
+  //         mergedRows - If Merge was requested, a Cheerio query function based on the merged rows of the new and old collections, otherwise null
 
   Log('function dayCompare entered')
 
-  const prefix = '<table>' // prepend to newTable/oldTable
-  const suffix = '</table>' // append to newTable/oldTable
   const addColor = '#e7fcd7' // light green - background color for added rows
   const delColor = '#fce3e3' // light red - background color for missing rows
   const test = false
   const debug = true
-
-  function rowsText (rows, cheerioQuery) {
-    // Create an array of table row text
-    // Input: 1) Iterable Cheerio object of table rows
-    //        2) Cheerio query function for argument 1
-    // Output: array of table row text
-    //
-    // Extract the text from each table row's table data elements (TD), remove whitespace
-    //  and add the concatenation of the TD text to the output array
-
-    const text = []
-    rows.each(function () {
-      // For each row,
-
-      // Get its TD elements
-      const tds = cheerioQuery('td', this)
-
-      // rowText will be a concatenation of each TD's text
-      let rowText = ''
-
-      tds.each(function () {
-        // For each TD element,
-
-        // Get its text, remove whitespace and <br> elements,
-        //  replace 'http' with 'https', and concatenate the result
-        //  to rowText
-        rowText += cheerioQuery(this).html().replace(/\s+|<br>/g, '').replace('http:', 'https:')
-      })
-
-      // Append the row's concatenated text to the output array
-      text.push(rowText)
-    })
-
-    // return [row text, row text, ...]
-    return text
-  }
 
   function createButton (id, text) {
     // Create a tableCompare action button
@@ -672,27 +550,24 @@ async function dayCompare (newTable, oldTable) {
     })
   }
 
-  // Create a Cheerio query function for the old collection
-  const old$ = cheerio.load(prefix + oldTable + suffix)
-
-  // For the old collection, create an iterable Cheerio object of the table rows (oldRows)
-  // and a javascript array of Cheerio objects for each table row
+  // For the old collection, create an iterable Cheerio object of the table rows
   const oldRows = old$('tr')
-  const oldRowsArray = oldRows.toArray()
 
   // Create an array (oldRowsText) of each old table row's text
-  const oldRowsText = rowsText(oldRows, old$)
+  const oldRowsText = []
+  oldRows.each((i, tr) => oldRowsText.push(old$('td', tr).tableText(old$)))
 
-  // Create a Cheerio query function for the new collection
-  const new$ = cheerio.load(prefix + newTable + suffix)
-
-  // For the new collection, create an iterable Cheerio object of the table rows (newRows)
-  // and a javascript array of Cheerio objects for each table row
+  // For the new collection, create an iterable Cheerio object of the table rows
   const newRows = new$('tr')
-  const newRowsArray = newRows.toArray()
 
   // Create an array (newRowsText) of each new table row's text
-  const newRowsText = rowsText(newRows, new$)
+  const newRowsText = []
+  newRows.each((i, tr) => newRowsText.push(new$('td', tr).tableText(new$)))
+
+  // Make a copy of the new collection.  Rows from the old collection that are missing from the new one will be merged into this copy.
+  const merge$ = cheerio.load('<table></table')
+  merge$.prototype.formatHTML = formatHTML
+  merge$(new$('table').formatHTML(new$)).appendTo('table')
 
   // Uncomment the following 3 rows to test
   // newRowsText = ["r", "a", "b", "c", "z", "d", "e", "f", "g", "h", "w", "i", "j", "k", "l", "m", "u" ];
@@ -800,38 +675,22 @@ async function dayCompare (newTable, oldTable) {
   Log('After oldInOld loop: oldInOldIndex: ' + oldInOldIndex.toString(), debug)
   Log('oldInOld array: ' + oldInOld, debug)
 
-  // diffRowsHTML is only for debugging
-  const diffRowsHTML = [...newRowsText]
-
   // For each newInNew element (an added table row in newRowsArray),
-  //  modify the table row in newRowsArray to set its background color to 'added'.
+  //  modify the table row in the merge collection to set its background color to 'added'.
   newInNew.forEach((el) => {
-    diffRowsHTML[el] = '+' + diffRowsHTML[el]
-    new$(newRowsArray[el]).css('background-color', addColor)
+    merge$('tr').eq(el).css('background-color', addColor)
   })
 
-  // If there are table rows in oldRowsArray not present in newRowsArray
-  //  (i.e. oldInOld not empty), duplcate newRowsArray as mergedHTML.
-  // mergedHTML will be modified in the following loop and then returned
-  //  to the caller if the Merge action is chosen.
-  let mergedHTML
-  if (oldInOld.length > 0) {
-    mergedHTML = [...newRowsArray]
-  }
-  // For each oldInOld element (a table row in oldRowsArray not present in
-  //  newRowsArray), copy the oldRowsArray element to the appropriate position
-  //  in mergedHTML, then modify the table row in oldRowsArray to set its
-  //  background color to 'deleted' and copy the modified oldRowsArray element
-  //  to the appropriate position in newRowsArray.
-  // The appropriate position in newRowsArray (and its duplicate mergedHTML) is
-  //  determined by iterating backwards through the oldInNew array from the
-  //  position of the oldInOld element under consideration until a positive
-  //  oldInNew element is found. The value of this positive oldInNew element
-  //  is the position in newRowsArray of the first table row preceeding the
-  //  oldInOld element under consideration that exists in both oldRowsAray and
-  //  newRowsArray. The oldInOld element under consideration should be inserted
-  //  into newRowsArray (and its duplicate mergedHTML) after this row common
-  //  to both new and old arrays.
+  // For each oldInOld element (a table row in the old collection not present in the
+  //  new collection), copy the corresponding old collection row to the appropriate position
+  //  in the merge collection and set its background color to 'deleted'
+  // The appropriate position in merge collection) is determined by iterating backwards
+  //  through the oldInNew array from the position of the oldInOld element under consideration
+  //  until a positive oldInNew element is found. The value of this positive oldInNew element
+  //  is the position in merge collection of the first table row, preceeding the
+  //  oldInOld element under consideration, that exists in both old collection and the new
+  //  collection. The oldInOld element under consideration should be inserted into the merge
+  //  collection after this row common to both new and old arrays.
   Log('oldInOld loop', debug)
   oldInOld.forEach((el) => {
     // For each oldInOld element (an index in the oldInNew array) ...
@@ -849,48 +708,33 @@ async function dayCompare (newTable, oldTable) {
     if (prevEl < 0) {
       // If a non-negative element is not found ...
       Log('Prepend el: ' + el.toString(), debug)
-      diffRowsHTML.unshift('-' + oldRowsText[el])
 
-      // Prepend the oldRowsArray element to the mergedHTML
-      mergedHTML.unshift(oldRowsArray[el])
-
-      // Set the row's background color to 'deleted' in oldRowsArray
-      old$(oldRowsArray[el]).css('background-color', delColor)
-
-      // Prepend the modified oldRowsArray element to the newRowsArray
-      newRowsArray.unshift(oldRowsArray[el])
+      // Prepend the old collection row to the merge collection
+      merge$('table').prepend(old$('tr').eq(el).clone().css('background-color', delColor))
     } else {
       // Otherwise, if a non-negative element (that is, a row that exists
-      //  in both oldRowsArray and newRowsArray) was found ...
+      //  in both the old and new collections was found ...
 
-      // ... the place in newRowsArray to insert the 'deleted' row is
+      // ... the place in the merge collection to insert the 'deleted' row is
       //  after that common row.
       const insertion = oldInNew[prevEl] + 1
       Log('Add ' + el.toString() + ' at: ' + insertion.toString(), debug)
-      diffRowsHTML.splice(insertion, 0, '-' + oldRowsText[el])
 
-      // Insert the oldRowsArray elment into mergedHTML
-      mergedHTML.splice(insertion, 0, oldRowsArray[el])
-
-      // Set the row's background color to 'deleted' in oldRowsArray
-      old$(oldRowsArray[el]).css('background-color', delColor)
-
-      // Insert the modified oldRowsArray elment into the newRowsArray
-      newRowsArray.splice(insertion, 0, oldRowsArray[el])
+      // Insert the oldRowsArray elment into the new collection
+      merge$('tr').eq(insertion - 1).after(old$('tr').eq(el).clone().css('background-color', delColor))
     }
   })
 
   Log('oldRowsText: ' + oldRowsText, debug)
   Log('newRowsText: ' + newRowsText, debug)
-  Log('updated diffRowsHTML: ' + diffRowsHTML, debug)
 
   Log('Added rows: ' + newInNew.length.toString(), debug)
   Log('Deleted rows: ' + oldInOld.length.toString(), debug)
 
-  // added is true if newRowsArray contains added rows
+  // added is true if the new collection contains added rows
   const added = newInNew.length > 0
 
-  // deleted is true if oldRowsArray contains rows missing from newRowsArray
+  // deleted is true if the old collection contains rows missing from the new one
   const deleted = oldInOld.length > 0
 
   if (test) {
@@ -898,14 +742,14 @@ async function dayCompare (newTable, oldTable) {
   }
 
   if (added && deleted) {
-    // If there are both added and missing rows in the new table HTML,
+    // If there are both added and missing rows in the new collection,
     //  display a button to replace the existing table HTML with the
     //  union of the added and existing rows, i.e. add the added rows and
     //  retain the missing rows
     await createButton('mergeBtn', 'Merge')
   }
   if (added || deleted) {
-    // If there are added rows or missing rows in the new table HTML,
+    // If there are added rows or missing rows in the new collection,
     //  display a button to discard the new table HTML
     await createButton('replaceBtn', 'Replace')
     await createButton('discardBtn', 'Discard')
@@ -922,20 +766,10 @@ async function dayCompare (newTable, oldTable) {
     //  display a table identifying the added and missing rows by background
     //  color
 
-    // Create a Cheerio query function for an empty table
-    const table$ = cheerio.load('<table><tbody></tbody></table>')
-
-    // Add table rows from newRowsArray to the empty table
-    for (let a = 0; a < newRowsArray.length; a++) {
-      table$(newRowsArray[a]).appendTo('tbody')
-    }
-    Log('diff table:', debug)
-    Log(table$('table').html(), debug)
-
     // Display the table
-    global.win.webContents.send('display-tableCompare', table$('table').html())
+    global.win.webContents.send('display-tableCompare', merge$('table').html())
 
-    // Enable acction buttons
+    // Enable action buttons
     global.win.webContents.send('enable-action-buttons')
     // Wait for a button to be clicked
     buttonClicked = await getAction()
@@ -951,27 +785,20 @@ async function dayCompare (newTable, oldTable) {
   //  table HTML.
   let returnObj
   if (buttonClicked === 'Merge') {
-    // Create a Cheerio query function for an empty table
-    const merged$ = cheerio.load('<table><tbody></tbody></table>')
-
-    // Add table rows from mergedHTML to the empty table
-    for (let a = 0; a < mergedHTML.length; a++) {
-      merged$(mergedHTML[a]).appendTo('tbody')
-    }
-
-    // Return the selected action and the merged table HTML
-    //  (The merged table HTML returned by Cheerio is modified to match the HTML
-    //   generated by this app.  A carriage return is appended to </tr> elements
-    //   and 14 spaces are prepended to <tr> elements.)
+    // Remove background colors from the merge collection
+    merge$('tr').each((i, tr) => {
+      merge$(tr).removeAttr('style').prop('outerHTML')
+    })
+    // Return the selected action and the merged collection
     returnObj = {
       action: buttonClicked,
-      mergedHTML: merged$('tbody').html().replace(/<\/tr>/g, '</tr>\r').replace(/<tr>/g, '              <tr>')
+      mergedRows: merge$
     }
   } else {
-    // If not Merge, return the action selected and null for the merged table HTML
+    // If not Merge, return the action selected and null for the merged collection
     returnObj = {
       action: buttonClicked,
-      mergedHTML: null
+      mergedRows: null
     }
   }
   return returnObj
@@ -1026,10 +853,6 @@ async function Mainline () {
     s = swtch[s] // use the index for the other bump for the next date
     nextDate = nextDate.add(bumps[s], 'days') // Increment nextDate
   }
-  if (datesToProcess.length > 0) {
-    // If there are dates to process, update lastDate.txt
-    saveLastDate = true
-  }
 
   // Create an HTTP server to receive POST requests from the tpScrape and Scrape userscripts
   const server = http.createServer(requestListener)
@@ -1042,35 +865,46 @@ async function Mainline () {
     const checkedArticleIndices = JSON.parse(checkedArticleIndicesString)
     Log('checkedArticleIndices: ' + checkedArticleIndices)
 
+    const tpDate = tpDateObj.format('MM/DD/YYYY')
+    const tpYear = tpDate.substring(6)
+    const exportValues = true // Export values returned from the review window
+    let tableRowInfo // Export file stream
+
     if (checkedArticleIndices.length > 0) {
       // If any articles were checked, create table HTML for the date being processed
-      const tpDate = tpDateObj.format('MM/DD/YYYY')
-      const tpYear = tpDate.substring(6)
-
       // Display the content of checked articles and their recipes in a new window for review
       const tableRowsArray = await review(checkedArticleIndices)
 
-      // Write article/recipe content to disk
-      // const tableRowInfoFile = path.join(app.getPath('appData'), app.getName(), 'tableRowInfo.txt')
-      // const tableRowInfo = fs.createWriteStream(tableRowInfoFile)
-
-      let rowHTML = ''
-      for (const row of tableRowsArray) {
-        // tableRowInfo.write(JSON.stringify(row) + '\n')
-        const [date, type, name] = row
-        rowHTML += '              <tr>\n'
-        rowHTML += `                <td class="${date.classList}">${date.content}\n`
-        rowHTML += '                </td>\n'
-        rowHTML += `                <td class="${type.classList}">${type.content}\n`
-        rowHTML += '                </td>\n'
-        rowHTML += `                <td class="${name.classList}">${name.content}\n`
-        rowHTML += '                </td>\n'
-        rowHTML += '              </tr>\n'
-        newTableHTML += rowHTML.replaceAll(' class=""', '')
-        rowHTML = ''
+      if (exportValues) {
+        // Write article/recipe content to disk
+        const tableRowInfoFile = path.join(app.getPath('appData'), app.getName(), `tableRowInfo${tpDateObj.format('-YYYY-MM-DD')}.txt`)
+        tableRowInfo = fs.createWriteStream(tableRowInfoFile)
       }
-      // tableRowInfo.close()
-      console.log('Created HTML for ' + tpDate)
+
+      // Create a Cheerio query functon based on a table and append the table rows returned from the review window to it
+      let $newDay = cheerio.load('<table></table>')
+      $newDay.prototype.tableText = tableText
+      $newDay.prototype.formatHTML = formatHTML
+      let $existingDay
+      for (const row of tableRowsArray) {
+        if (exportValues) {
+          tableRowInfo.write(JSON.stringify(row) + '\n')
+        }
+        const [date, type, name] = row
+        const rowClone = $rowTemplate('tr').clone()
+        const tds = $rowTemplate('td', rowClone)
+        $rowTemplate(tds[0]).addClass(date.classList)
+        $rowTemplate(tds[0]).html(date.content)
+        $rowTemplate(tds[1]).addClass(type.classList)
+        $rowTemplate(tds[1]).text(type.content)
+        $rowTemplate(tds[2]).addClass(name.classList)
+        $rowTemplate(tds[2]).html(name.content)
+        $newDay('table').append(rowClone)
+      }
+      if (exportValues) {
+        tableRowInfo.close()
+        console.log('Created HTML for ' + tpDate)
+      }
 
       // If a date was entered and table HTML for that date already exists, compare the two HTMLs
       let checkExistingResult
@@ -1079,9 +913,14 @@ async function Mainline () {
       if (dateEntered) {
         checkExistingResult = checkExisting(tpDate)
         if (checkExistingResult.exists) {
-          compareResult = await dayCompare(newTableHTML, checkExistingResult.existingHTML)
+          // Create a Cheerio query function based on the existing table rows
+          $existingDay = cheerio.load('<table>' + checkExistingResult.existingHTML + '</table>')
+          $existingDay.prototype.tableText = tableText
+          $existingDay.prototype.formatHTML = formatHTML
+
+          // Compare the new table rows to the existing rows
+          compareResult = await dayCompare($newDay, $existingDay)
           Log('Action returned: ' + compareResult.action)
-          Log('HTML returned: ' + compareResult.mergedHTML)
         }
       }
 
@@ -1112,7 +951,7 @@ async function Mainline () {
 
           case 'Merge':
             global.win.webContents.send('remove-lastMsg')
-            newTableHTML = compareResult.mergedHTML
+            $newDay = compareResult.mergedRows
             break
 
           default:
@@ -1121,7 +960,10 @@ async function Mainline () {
       }
 
       if (updateHTML) {
-        if (updateIndexHTML(tpDate, tpYear)) {
+        newTableHTML = $newDay('table').formatHTML($newDay)
+        console.log('newTableHTML:')
+        console.log(newTableHTML)
+        if (updateIndexHTML(tpDate, tpYear, $newDay)) {
           console.log('Mainline: index.html updated')
           newTableHTML = '' // Reset newTableHTML
 
@@ -1144,13 +986,20 @@ async function Mainline () {
           global.win.webContents.send('display-msg', msg)
           global.win.webContents.openDevTools() // Open Developer Tools; displays error logging
         }
-
-        // Store LastDate processed and tell the renderer process to update the max pickable date
-        if (saveLastDate) {
-          fs.writeFileSync(lastDateFile, tpDate, 'utf8')
-          global.win.webContents.send('update-maxdate', tpDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2'))
-        }
       }
+    } else {
+      // No articles were checked, remove rows in index.html for the date being processed
+      updateIndexHTML(tpDate, tpYear, null)
+      global.win.webContents.send('remove-msgs')
+      const msg = `No articles were selected; existing table rows for ${tpDate} (if any) were removed`
+      global.win.webContents.send('display-msg', msg)
+    }
+
+    // Store LastDate processed and tell the renderer process to update the max pickable date
+    if (saveLastDate) {
+      fs.writeFileSync(lastDateFile, tpDate, 'utf8')
+      global.win.webContents.send('update-maxdate', tpDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2'))
+      saveLastDate = false
     }
   })
 
@@ -1164,6 +1013,7 @@ async function Mainline () {
     subp.unref()
     firstArticle = true // The next artInfo object received will be the first article
     dateEntered = false // The date was not selected from the date picker
+    saveLastDate = true // Save the date as the last date processed
   })
 
   ipcMain.on('process-date', async (event, enteredDate) => {
@@ -1235,19 +1085,5 @@ async function Mainline () {
 }
 
 // End of function definitions
-
-app.on('will-quit', async () => {
-  // Close the application's tab in the remote Chrome instance
-  if (!browser?.isConnected()) {
-    // Puppeteer will disconnect from the remote browser after a period of inactivity.
-    // If this has happened, reconnect.
-    await connectPup()
-  }
-  try {
-    await page.close()
-  } catch (e) {
-    Log('Page close error - ' + e)
-  }
-})
 
 Mainline() // Launch puppeteer, start HTTP server add event listener for Start button

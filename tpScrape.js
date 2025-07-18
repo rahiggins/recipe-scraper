@@ -170,7 +170,10 @@ function TPscrape (location, debug) {
           tpHref = prot + '//' + hostnm + tpHref
         }
         Log('Article href: ' + tpHref)
-        author = arts[a].querySelector('span.css-1n7hynb').textContent
+        author = arts[a].querySelector('span.css-1n7hynb')?.textContent
+        if (!author) {
+          author = ''
+        }
         Log('Author: ' + author)
         artObj = { // create an article object
           tpTitle,

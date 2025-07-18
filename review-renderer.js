@@ -155,9 +155,9 @@ function mouseEventHandler (evt) {
     if (target.classList.contains('menu-cell')) {
       const targetTD = evt.target.closest('td')
       const tdRect = targetTD.getBoundingClientRect()
-      if (window.innerHeight - tdRect.top < 200) {
-        // if the top of the target table cell is less than 200 pixels (the menu height) from the bottom of the window, adjust the position of the menu so that the menu fits within the window.
-        const offset = 200 - (window.innerHeight - tdRect.top) + 15
+      if (window.innerHeight - tdRect.top < 228) {
+        // if the top of the target table cell is less than 228 pixels (the menu height) from the bottom of the window, adjust the position of the menu so that the menu fits within the window.
+        const offset = 228 - (window.innerHeight - tdRect.top) + 15
         menu.style.top = `-${offset}px`
       }
       menu.style.display = 'block' // Show the menu
@@ -172,7 +172,7 @@ function mouseEventHandler (evt) {
 function setListeners (trID) {
   // Add event listeners to row menu selections
   const lis = document.querySelectorAll(`#${trID} li`)
-  const listeners = [insert, insert, move, move, repl, del, code]
+  const listeners = [insert, insert, move, move, repl, del, code, embolden]
   let l = 0
   for (const li of lis) {
     li.addEventListener('click', listeners[l])
@@ -330,6 +330,24 @@ function code (evt) {
         div.insertAdjacentHTML('afterbegin', iT)
         div.dataset.codeToggle = '0'
     }
+  }
+}
+
+// Listener function for click on Embolden
+function embolden (evt) {
+  const rowID = evt.target.dataset.row
+  console.log('code entered - ' + rowID)
+  const tds = document.querySelectorAll(`#${rowID}  td[data-code="eligible"]`)
+  for (const td of tds) {
+    const div = td.querySelector('div')
+    const inner = div.innerHTML.trim()
+    div.innerHTML = '<strong>' + inner + '</strong>'
+  }
+
+  // Indicate table changed and enable the Save button
+  if (!changed) {
+    changed = true
+    saveBtn.removeAttribute('disabled')
   }
 }
 
