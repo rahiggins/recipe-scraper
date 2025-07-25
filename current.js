@@ -5,18 +5,19 @@
 
 // When a not yet processed date link is clicked, the application launches a Chrome instance to display the day's Today's Paper page. When subsequent date links are clicked,  the Today's Paper page is opened in a new tab in the previously launched Chrome instance.
 
-// The application works with Tampermonkey userscripts (tpScrap and Scrape), installed in the launched Chrome instance.  Userscript tpScrape is invokfrom a Tampermonkey menu command and scrapes the food section (Food or Magazine) of the Today's Paper page for article titles, authors and URLs. Userscript Scrape scrapes opened articles for recipes. The userscripts send their results to the recipe-scraper application via HTTP.
+// The application works with Tampermonkey userscripts (tpScrape, Scrape and reportCookingHref) installed in the launched Chrome instance.  Userscript tpScrape is invoked from a Tampermonkey menu command and scrapes the food section (Food or Magazine) of the Today's Paper page for article titles, authors and URLs. The userscript opens the articles in tabs and userscript Scrape scrapes those articles for recipes. Scrape also looks for recipes in related links blocks. For such recipes, the userscript opens the recipes in tabs. For these recipes, the userscript reportCookingHref obtains the URL of the article in which the recipe was featured.
 
-// The recipe-scraper application formats the information sent by the userscripts as table HTML. It displays the table entries for review and editing. It then adds the entries to the year's index.html file. It also adds the day's entries to the local NYTArticles dagtabase and creates SQL statements to add the entries to the remote NYTArticles database.
+// These userscripts send their results to the recipe-scraper application via HTTP.
 
-// manual click version 3.2.0
+// The recipe-scraper application uses Cheerio to format the information sent by the userscripts as table rows. It displays the table rows for review and editing. It then adds the rows to the year's index.html file and stores the rows in HTML format as a file in the year's Days folder. It also adds the day's entries to the local NYTArticles database and creates SQL statements to add the entries to the remote NYTArticles database.
+
+// related-links version 3.3.0
 
 // Code structure:
 //
 //  Global variable definitions
 //  Global function definition
 //    function Log
-//    function connectPup
 //    function getEpoch
 //
 //  function requestListener
@@ -112,10 +113,16 @@
 //  inconsistency: boolean
 // }
 //
+// candidateObj { created by the Scrape userscript
+//  title: string,
+//  url: string
+// }
+//
 // artInfo { sent via HTTP POST be the Scrape userscript
 //  ID: 'artInfo',
 //  hasRecipes: boolean,
 //  recipeList: [recipeObj, recipeObj, ..., recipeObj],
+//  candidates: [candidateObj, candidateObj, ..., candidateObj]
 //  titleInfo: {
 //                title: string,
 //                arttype: string,
@@ -125,6 +132,12 @@
 // }
 //
 // Key:value pairs in the corresponding artObj object are added to the artInfo object in the requestListener function.
+//
+// recipeRelatedArticle { created by the reportCookingHref userscript
+//  ID: 'recipeRelatedArticle',
+//  recipeURL: string,
+//  relatedArticleURL: string
+// }
 //
 // tableRowsArray [[date Obj, type Obj, name Obj], ...]  Returned by function review
 // Obj {
@@ -167,6 +180,8 @@ let dateEntered = false // Set to true in 'process-date'
 const debug = true
 let sect // Magazine | Food
 let firstArticle = true // true for first article of a date being processed sent by userscript Scrape
+let counters // Object for counts of articles and recipe candidates
+let dayPromise // Promise for the day being processed, resolved when all articles and recipe candidates have been recieved and processed
 
 // Function definitions
 
@@ -231,9 +246,6 @@ async function requestListener (req, res) {
   // Function to process an article info object received from the Scrape userscript
   async function artInfo (postObj) {
     Log('Function artInfo entered for ' + postObj.url)
-    res.setHeader('Content-Type', 'application/json')
-    res.writeHead(200)
-    res.end('{"message": "OK"}')
 
     // Find the corresponding element of the Today's Paper object array
     // let notMatched = true // Attempt to handle additional articles not on the Today's Paper page
@@ -259,7 +271,19 @@ async function requestListener (req, res) {
       const msg = `${sect} section articles for ${tpDateObj.format('dddd')}, ${tpDateObj.format('MM/DD/YYYY')}`
       global.win.webContents.send('display-msg', msg)
     }
+
+    // Add the article to the application window
     await addArticles(JSON.stringify(postObj))
+
+    // Update counters
+    const artIdx = 'article' + postObj.index.toString()
+    counters[artIdx + 'Candidates'] = postObj.candidates?.length || 0
+    counters.articles -= 1
+
+    // Respond to the POST request
+    res.setHeader('Content-Type', 'application/json')
+    res.writeHead(200)
+    res.end('{"message": "OK"}')
   }
   // End of function definitions
 
@@ -281,6 +305,7 @@ async function requestListener (req, res) {
       case 'articleArray':
         // Handle an array of article objects
         tpObjArray = postObj.articles
+        counters.articles = tpObjArray.length
         // nextIndex = tpObjArray.length // Attempt to handle additional articles not on the Today's Paper page
         tpURL = postObj.url
         tpDateObj = Moment(tpURL.replace(/^.*?(\d{4})\/(\d{2})\/(\d{2}).*$/, '$2/$3/$1'), 'MM/DD/YYYY')
@@ -294,7 +319,35 @@ async function requestListener (req, res) {
 
       case 'artInfo':
         // Handle an article info object
-        artInfo(postObj)
+        await artInfo(postObj)
+        break
+
+      case 'recipeRelatedArticle':
+        // Handle a 'featured in' article href from a Related Links block recipe
+        console.log('recipeRelatedArticle object:')
+
+        // See if the recipe was featured in one of the day's articles
+        for (const artObj of articleInfoObjArray) {
+          // For each of the day's articles ...
+          if (artObj.candidates.length > 0) {
+            for (const candidate of artObj.candidates) {
+              if (candidate.url === postObj.recipeURL) {
+                // If the recipe URL matches one of this article's candidates and ...
+                if (postObj?.relatedArticleURL === artObj.url) {
+                  // ... if the 'featured in' href matches this article, add the recipe to the article's recipe list
+                  artObj.recipeList.push({ name: candidate.title, link: postObj.recipeURL, inconsistency: false })
+                  artObj.hasRecipes = true
+                }
+                // Decrement the number of this article's candidates remaining to be processed
+                const artIdx = 'article' + artObj.index.toString()
+                counters[artIdx + 'Candidates'] -= 1
+              }
+            }
+          }
+        }
+        res.setHeader('Content-Type', 'application/json')
+        res.writeHead(200)
+        res.end('{"message": "OK"}')
         break
 
       default:
@@ -303,6 +356,7 @@ async function requestListener (req, res) {
         res.writeHead(501)
         res.end(`{"message": "In the object POSTed, the value of the ID key: ${postObj.ID}, was not recognized"}`)
     }
+    console.log('All articles processed: ' + counters.zero(dayPromise))
   })
 }
 
@@ -808,6 +862,33 @@ async function dayCompare (new$, old$) {
 async function Mainline () {
   console.log('Entered Mainline')
 
+  async function launchChrome (url) {
+    // Open the selected date's Today's Paper page in Google Chrome
+    const subp = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--no-first-run', '--no-default-browser-check', '--user-data-dir=/Users/rahiggins/Library/Application Support/Google/Chrome/Remote', '--remote-debugging-port=9222', url], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    subp.unref()
+
+    counters = { // Initialize the counters object
+      zero: function (p) {
+        for (const value of Object.values(this)) {
+          if (typeof value === 'function') {
+            continue
+          }
+          if (value !== 0) {
+            return false
+          }
+        }
+        p.resolve()
+        return true
+      }
+    }
+    dayPromise = Promise.withResolvers() // Create a Promise to wait for all the day's articles to be processed
+    await dayPromise.promise
+    global.win.webContents.send('enable-review') // Enable the Review button
+  }
+
   // Construct path to last-date-processed file
   const lastDateFile = path.join(app.getPath('appData'), app.getName(), 'LastDate.txt')
   console.log('lastDateFile: ' + lastDateFile)
@@ -1003,17 +1084,13 @@ async function Mainline () {
     }
   })
 
-  ipcMain.on('openTP', (evt, url) => {
+  ipcMain.on('openTP', async (evt, url) => {
     // When a Today's Paper page link is clicked, open the page in Google Chrome
     console.log('openTP: ' + url)
-    const subp = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--no-first-run', '--no-default-browser-check', '--user-data-dir=/Users/rahiggins/Library/Application Support/Google/Chrome/Remote', '--remote-debugging-port=9222', url], {
-      detached: true,
-      stdio: 'ignore'
-    })
-    subp.unref()
     firstArticle = true // The next artInfo object received will be the first article
     dateEntered = false // The date was not selected from the date picker
     saveLastDate = true // Save the date as the last date processed
+    launchChrome(url) // Open the Today's Paper page in Chrome
   })
 
   ipcMain.on('process-date', async (event, enteredDate) => {
@@ -1042,12 +1119,8 @@ async function Mainline () {
     }
     console.log('process-date: ' + url)
 
-    // Open the selected date's Today's Paper page in  Google Chrome
-    const subp = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--no-first-run', '--no-default-browser-check', '--user-data-dir=/Users/rahiggins/Library/Application Support/Google/Chrome/Remote', '--remote-debugging-port=9222', url], {
-      detached: true,
-      stdio: 'ignore'
-    })
-    subp.unref()
+    // Open the selected date's Today's Paper page in Google Chrome
+    launchChrome(url)
   })
 
   ipcMain.on('AOT', (event, arg) => {

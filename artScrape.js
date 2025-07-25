@@ -11,6 +11,7 @@
 //  ID: "artInfo",
 //  hasRecipes: boolean,
 //  recipeList: [{ name: string, link: string, inconsistency: booolean } ...],
+//  candidates: [{ title: string, url: string }, ...],
 //  titleInfo: { title: string, arttype: string, ATDPresent: boolean },
 //  url: string
 // }
@@ -114,7 +115,7 @@ function nameDiffersFromURL (originalName, href) {
 }
 
 // eslint-disable-next-line no-unused-vars
-function artScrape (returnObj, debug) {
+async function artScrape (returnObj, debug) {
   // Called from the userscript Scrape
   // Input:
   //  - {
@@ -242,7 +243,7 @@ function artScrape (returnObj, debug) {
     return { title, arttype, ATDPresent }
   }
 
-  function getRecipes () {
+  async function getRecipes () {
     // Called from artScrape
     // Input is a Cheerio query function for the article page HTML
     // Pushes items to the recipeList array [{name:, link:} ...]
@@ -401,6 +402,51 @@ function artScrape (returnObj, debug) {
       }
     }
 
+    // Look for recipes in Related Links blocks. Recipes in Related Links blocks are only candidates for inclusion. The recipe must be examined for a 'featured in' link to the article being scraped.
+    // 3/12/2025 'The Secret to Great Pancakes Has Been in Your Pantry All Along'
+    // 5/25/2025 'This Filipino Chicken Soup Heals and Restores'
+    // 6/18/2025 'The Ever-Evolving Juneteenth Table'
+
+    // Related Links blocks must be scrolled into view to load their contents and control must be relinquished in order to allow their contents to be loaded.
+    const lazy = document.querySelectorAll('div[data-testid="lazy-loader"]')
+    console.log('Number of lazy-loader instances: ' + lazy.length.toString())
+    for (let i = 0; i < lazy.length; i++) {
+      lazy[i].scrollIntoView()
+      console.log('waiting')
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    const related = document.querySelectorAll('.related-links-block')
+    console.log('Number of related-links-block instances: ' + related.length.toString())
+
+    // Filter out related Links block recipes that have already been encountered in the article body.
+    const candidatesArray = [] // Array of candidate recipes from Related Links blocks
+    const candidates = document.querySelectorAll('.related-links-block a')
+    console.log('Number of related recipes: ' + candidates.length.toString())
+    for (const candidate of candidates) {
+      if (candidate.href.startsWith('https://cooking.nytimes.com')) {
+        let push = true
+        for (const href of hrefArray) {
+          console.log('Comparing candidates to recipes')
+          console.log('recipe: ' + href)
+          console.log('candidate: ' + candidate.href)
+          if (href === candidate.href) {
+            console.log('comparison equal')
+            push = false
+            break
+          }
+        }
+        if (push) {
+          // If the recipe was not in the article body, add it to the candidates
+          candidatesArray.push({
+            title: candidate.querySelector('div:nth-child(2) > div:nth-child(2)').textContent,
+            url: candidate.href
+          })
+        }
+      }
+    }
+
     // Look for duplicate hrefs.
     //  For Maximum Flavor, Make These Spice Blends at Home - 2/24/2021
     //  I Lost My Appetite Because of Covid. This Sichuan Flavor Brought It Back. - 1/24/2021
@@ -441,14 +487,17 @@ function artScrape (returnObj, debug) {
 
     Log('Function getRecipes exiting')
     console.log('Found ' + recipeList.length.toString() + ' recipes')
-    return [recipeList.length > 0, recipeList]
+    return [recipeList.length > 0, recipeList, candidatesArray]
   }
 
   // Get title, arttype and ATDPresent
   returnObj.titleInfo = getTitle()
-  const [hasRecipes, recipeList] = getRecipes() // Get recipes
+
+  // Get recipes and candidate recipes from Related Links blocks
+  const [hasRecipes, recipeList, candidates] = await getRecipes() // Get recipes
   returnObj.hasRecipes = hasRecipes
   returnObj.recipeList = recipeList
+  returnObj.candidates = candidates
 
   console.log('returnObj:')
   console.log(returnObj)

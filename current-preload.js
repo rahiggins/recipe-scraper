@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld(
     onAddContinue: (fn) => {
       ipcRenderer.on('add-continue', (event, ...args) => fn(...args))
     },
+    onEnableReview: (fn) => {
+      ipcRenderer.on('enable-review', (event, ...args) => fn(...args))
+    },
     onEnableContinue: (fn) => {
       ipcRenderer.on('enable-continue', (event, ...args) => fn(...args))
     },

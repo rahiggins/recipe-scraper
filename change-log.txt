@@ -1,3 +1,40 @@
+?/24/2025
+    related-links branch
+    Change current.js
+    - function Mainline
+        -- Add function lauchChrome to spawn an instance of Chrome, to create a counters object, to create a Promise with resolvers object and to wait on that object's promise. The counters object is used to keep track of the articles and candidate recipes remaining to be processed. When everything has been processed, the Promise object's promise will be resolved, and launchChrome then sends an 'enable-review' message to the renderer process to enable the Review button.
+    - on.'openTP'
+        -- Call function launchChrome instead of spawning Chrome
+    - on.'process-date'
+        -- Call function launchChrome instead of spawning Chrome
+    - function requestListener
+        -- In case 'articleArray', add the number of articles to the counters object
+        -- In case 'artInfo', add 'await' to the call of function artInfo
+        -- Add case 'recipeRelatedArticle' to handle a recipe related article object sent by the reportCookingHref userscript.
+        -- In function artInfo,
+            --- move the response to the POST request to the end of the function,
+            --- add the number of candidate recipes found in the article to the counters object
+            --- decrement the count of acticles in the counters object
+        -- After the POST request has been processed, check the counters object to see if anything remains to be processed and if not, call the Promise object's resolve function.
+    Change current-preload.js
+        - Add onEnableReview for the enable-review message
+    Change current-renderer.js
+        - Add onEnableReview to enable the 'Review' button.
+        - Add a boolean noArticlesDisplayed initialized to true. It is used in onAddArticles for first-time actions, where it is set to false. It is reset to true in the 'Review' button event listener.
+    Change artScrape.javascript
+        - Make functions artScrape and getRecipes async.
+        - function getRecipes
+            -- Add code to extract recipes from div elements of class 'related-links-block'. Objects representing extracted recipes are added to an array, candidatesArray.
+            -- Add candidatesArray to the array returned by function getRecipes.
+        - Add 'await' to the call to function getRecipes
+        - Add the candidates array returned by function getRecipes to the returnObj object.
+    Change tpScrape.user.js
+        - Move the GM_xmlhttpRequest call to a new async function sendArticleArray, which returns a promise that is resolved by the response to the POST request.
+        - After awaiting function sendArticleArray, issue GM_openInTab for each article at 1 second intervals.
+    Change Scrape.js
+        - Move the GM_xmlhttpRequest call to a new async function sendArticleArray, which returns a promise that is resolved by the response to the POST request. After resolving the promise, open any candidate recipes returned in new tabs.
+    Add reportCookingHref.user.js
+        - Scrape an NYTCooking recipe for a 'featured in' article and return the result to the recipe-scraper application.
 7/17/2025
     Merge the manual click branch into the master branch
 7/17/2025

@@ -1,7 +1,7 @@
 // This file is invoked by the current.html file and will
 // be executed in the renderer process for that window.
 
-//  Manual click version 3.1.0
+//  Related links version 3.3.0
 
 // Code structure:
 //
@@ -77,6 +77,7 @@ let articlesIndexArray = [] // Array of article indices of articles added to the
 let articleInfoObjsArray = [] // Array of article info objects sent from the main process
 let todaysPaperURL // URL of the date being processed Today's Paper page
 let removeDateListItem // true if processing a dateList element, false if date was picked
+let noArticlesDisplayed = true // true before any of a day's articles have been displayed
 
 // Function definitions
 
@@ -165,10 +166,10 @@ dateSpec.addEventListener('change', (evt) => {
 })
 
 reviewButton.addEventListener('click', async (evt) => {
-  // Process click on the Submit button
+  // Process click on the Review button
   evt.preventDefault()
   console.log('Mainline: Review button clicked, disable Review button')
-  reviewButton.classList.add('disabled') // Disable the Submit button
+  reviewButton.classList.add('disabled') // Disable the Review button
 
   document.removeEventListener('click', articleClick)
   const ckd = document.querySelectorAll('input:checked') // Get checked articles
@@ -182,10 +183,11 @@ reviewButton.addEventListener('click', async (evt) => {
   while (aL.firstChild) {
     aL.removeChild(aL.lastChild)
   }
+  noArticlesDisplayed = true
   articlesIndexArray = [] // Reset array of article indices added to the window
   articleInfoObjsArray = [] // Reset array of article info objects sent from the main process
   if (removeDateListItem) {
-    // Remove the submitted articles' date from the dateList
+    // Remove the article's date from the dateList
     Array.from(datesList.querySelectorAll('a')).filter((el) => el.getAttribute('href') === todaysPaperURL)[0].remove()
   }
   window.scraper.send('AOT', false) // Set the window's 'always on top' attribute to false
@@ -235,9 +237,9 @@ window.scraper.onAddArticles((event, artInfoObjString) => {
   const cbTitle = article.querySelector('.article')
   const cbAuthor = article.querySelector('.author')
 
-  // If the Submit button is disabled, this is the first article being added. Enable the button, add an event listener for clicks on articles and set the window's 'always on top' attribute to true
-  if (reviewButton.classList.contains('disabled')) {
-    reviewButton.classList.remove('disabled')
+  // If noArticlesDisplayed is true, this is the first article being added. Add an event listener for clicks on articles and set the window's 'always on top' attribute to true
+  if (noArticlesDisplayed) {
+    noArticlesDisplayed = false
     document.addEventListener('click', articleClick)
     window.scraper.send('AOT', true)
   }
@@ -258,7 +260,7 @@ window.scraper.onAddArticles((event, artInfoObjString) => {
   const followingArticleIndex = articlesIndexArray.findIndex((element) => element > artInfo.index)
   Log('Indices: ' + artInfo.index + ', ' + followingArticleIndex)
   if (followingArticleIndex === -1) {
-    // If no such index is foudn, add the article to the end of the article list
+    // If no such index is found, add the article to the end of the article list
     aL.appendChild(article)
   } else {
     // Otherwise, insert this article before the article whose index was found
@@ -324,6 +326,12 @@ window.scraper.onAddContinue(() => {
   sub.value = 'Continue'
   sub.disabled = true
   aL.appendChild(sub)
+})
+
+window.scraper.onEnableReview(() => {
+  // Enable the 'Review' button
+  Log('enable-review entered')
+  reviewButton.classList.remove('disabled') // Disable the Submit button
 })
 
 window.scraper.onEnableContinue(() => {
