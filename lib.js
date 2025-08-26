@@ -1,6 +1,6 @@
 // Functions shared by current-renderer.js and past-renderer.js
 //
-//  tableText   - Cheerion query function plugin, return the aggregated text content of <td> elements
+//  tableText   - Cheerio query function plugin, return the aggregated text content of <td> elements
 //  formatHTML  - Cheerion query function plugin, format table row HTML
 //  NewDays     - determine which days in index.html are new or updated
 //  Insert      - Invoke insert.php to update the local database
@@ -8,8 +8,8 @@
 
 const fs = require('fs') // Filesystem functions
 const path = require('path') // Path functions
-const { BrowserWindow } = require('electron') // InterProcess Communications
 const cheerio = require('cheerio') // core jQuery
+const mysql = require('mysql2/promise') // MySQL database functions
 
 // NewDays is used after adding a day entry to a year's index.html file
 //  or changing an existing entry in an index.html file.
@@ -103,7 +103,7 @@ function formatHTML ($) {
 }
 
 // function NewDays(yyyy, msgDiv, singleDate) {
-function NewDays (yyyy) {
+async function NewDays (yyyy) {
   // Input: year (yyyy) of dates being processed
   // Returns true if there are inserts or updates to be processed, false otherwise
   // Segment the year's table HTML (~/Sites/NYT Recipes/yyyy/index.html) by day
@@ -111,6 +111,44 @@ function NewDays (yyyy) {
 
   // console.log("NewDays entered with " + yyyy + " singleDate: " + singleDate);
   console.log('NewDays entered with ' + yyyy)
+  let localDB // Local MySQL database connection
+  let remoteDB // Remote MySQL database connection
+  let databasesUpdated = false // Set to true on INSERT or UPDATE
+
+  // Connect to the local MySQL database
+  try {
+    localDB = await mysql.createConnection({
+      host: process.env.local_host,
+      port: process.env.local_port,
+      user: process.env.local_user,
+      password: process.env.local_password,
+      database: 'Rdays'
+    })
+  } catch (err) {
+    console.log(err)
+    global.win.webContents.send('display-msg', 'Fatal error - connection to local database failed:')
+    global.win.webContents.send('display-msg', ` Message: ${err.message}, Code: ${err.code}`)
+    throw new Error('Database connection failure terminates application')
+  }
+  // Connect to the remote MySQL database
+  try {
+    remoteDB = await mysql.createConnection({
+      host: process.env.remote_host,
+      port: process.env.remote_port,
+      user: process.env.remote_user,
+      password: process.env.remote_password,
+      database: 'rahiggins_Rdays'
+    })
+  } catch (err) {
+    console.log(err)
+    global.win.webContents.send('display-msg', 'Fatal error - connection to remote database failed:')
+    global.win.webContents.send('display-msg', ` ${err.message}`)
+    throw new Error('Database connection failure terminates application')
+  }
+
+  // MySQL statement templates
+  const insert = 'INSERT INTO days (year, month_num, month, day, markup) VALUES (?, ?, ?, ?, ?)'
+  const update = 'UPDATE days SET markup=?  WHERE year=? AND month_num=? AND day=?'
 
   // Cheerio extension function - add class names to a row's <td> elements
   // Used to add class names to the first row of a day's table HTML
@@ -123,9 +161,57 @@ function NewDays (yyyy) {
     })
   }
 
+  // Cheerio extension function - Extract the date from the first table cell of a day's table rows
+  function extractDate (mode = 'i') {
+    // this - $('tr td').eq(0)
+    // Return an array containing the date in the format [YYYY, MM, MMM, DD] for mode 'i'
+    // or [YYYY, MM, DD] for mode 'u'
+    // or an empty array for no date or an unrecognized mode
+    const months = { // Month number to month name mapping object
+      '01': 'Jan',
+      '02': 'Feb',
+      '03': 'Mar',
+      '04': 'Apr',
+      '05': 'May',
+      '06': 'Jun',
+      '07': 'Jul',
+      '08': 'Aug',
+      '09': 'Sep',
+      10: 'Oct',
+      11: 'Nov',
+      12: 'Dec'
+    }
+
+    // Match the date elements in a MM/DD/YYYY date
+    const dateMatch = this.text().trim().match(/(?<monthNum>\d{2})\/(?<day>\d{2})\/(?<year>\d{4})/)
+
+    // If a date was matched, return the date components according to the requested mode
+    if (dateMatch) {
+      switch (mode) {
+        case 'i':
+          return [dateMatch.groups.year,
+            dateMatch.groups.monthNum,
+            months[dateMatch.groups.monthNum],
+            dateMatch.groups.day
+          ]
+        case 'u':
+          return [dateMatch.groups.year,
+            dateMatch.groups.monthNum,
+            dateMatch.groups.day
+          ]
+        default:
+          console.log('extractDate: Unrecognized mode: ' + mode)
+          return []
+      }
+    } else {
+      console.log('extractDate: No date found in ' + this.text())
+      return []
+    }
+  }
+
   // Process a day
-  function processDay () {
-    // See if the day exists in the Days folder. If not, store it in the Days folder and the inserts folder. If it does, and it differs, rename the existing file, store the new file in the Days folder and the updates folder.
+  async function processDay () {
+    // See if the day exists in the Days folder. If not, store it in the Days folder and the inserts folder and insert the day in the remote database. If it does, and it differs, rename the existing file, store the new file in the Days folder and the updates folder and update the day in the remote database.
 
     // File names and paths
     const fileName = YMD + '.txt' // YMD is YYYY-MM-DD
@@ -152,8 +238,6 @@ function NewDays (yyyy) {
         console.log('Existing HTML:')
         console.log($day('td').tableText($day))
 
-        global.win.webContents.send('display-msg', `${fileName} differs, added to updates`, { indent: true })
-
         // Existing file will be renamed to Old_file
         if (fs.existsSync(oldFile)) {
           // If Old_file already exists, delete it
@@ -168,27 +252,53 @@ function NewDays (yyyy) {
         // Write updated file to Days
         fs.writeFileSync(dayFile, dayHTML, 'utf8')
 
-        // Write updated file to updates
-        fs.writeFileSync(path.join(updatePath, fileName), dayHTML, 'utf8')
-
-        // Set flag to call insert.php
-        callInsert = true
+        const values = $tmptbl('tr td').eq(0).extractDate('u') // Extract an array of date components
+        values.unshift(dayHTML) // Prepend the day's table HTML
+        databasesUpdated = true
+        // Update the day's table HTML in the local database
+        try {
+          await localDB.execute(update, values)
+          global.win.webContents.send('display-msg', `${YMD} updated in the local database`)
+        } catch (err) {
+          console.log(err)
+        }
+        // Update the day's table HTML in the remote database
+        try {
+          await remoteDB.execute(update, values)
+          global.win.webContents.send('display-msg', `${YMD} updated in the remote database`)
+        } catch (err) {
+          console.log(err)
+        }
       }
     } else {
       // The day's HTML file is not in the Days folder, so create it
-      global.win.webContents.send('display-msg', `${fileName} added to inserts`, { indent: true })
+      // global.win.webContents.send('display-msg', `${fileName} added to inserts`, { indent: true })
       const dayHTML = $tmptbl('table').formatHTML($tmptbl)
       fs.writeFileSync(dayFile, dayHTML, 'utf8')
-      fs.writeFileSync(path.join(insertPath, fileName), dayHTML, 'utf8')
-      callInsert = true
+
+      const values = $tmptbl('tr td').eq(0).extractDate() // Extract an array of date components
+      values.push(dayHTML) // Append the day's table HTML
+      databasesUpdated = true
+      // Insert the day's table HTML into the local database
+      try {
+        await localDB.execute(insert, values)
+        global.win.webContents.send('display-msg', `${YMD} inserted into the local database`)
+      } catch (err) {
+        console.log(err)
+      }
+      // Insert the day's table HTML into the remote database
+      try {
+        await remoteDB.execute(insert, values)
+        global.win.webContents.send('display-msg', `${YMD} inserted into the remote database`)
+      } catch (err) {
+        console.log(err)
+      }
     }
   }
 
   const yearPath = path.join('/Users/rahiggins/Sites/NYT Recipes', yyyy) // The year's folder
   const tablePath = path.join(yearPath, '/index.html') // The year's table HTML
   const daysPath = path.join(yearPath, 'Days') // Directory containing day segments
-  const insertPath = '/Applications/MAMP/htdocs/inserts/' // Directory containing day segments to be inserted
-  const updatePath = '/Applications/MAMP/htdocs/updates/' // Directory containing day segments for update
 
   // Load the year's table HTML into a Cheerio query function and add plugins to the function
   const table = fs.readFileSync(tablePath, 'UTF-8').toString()
@@ -200,7 +310,6 @@ function NewDays (yyyy) {
   let notFirst = false // First date is handled differently from the rest
   let $tmptbl // Cheerio queery function for a day in the year'as table HTML
   let YMD // YYYY-MM-DD date string
-  let callInsert = false // Flag to call insert.php
 
   const trs = $year('tr') // All table rows in the year'as table HTML
   for (const tr of trs) {
@@ -208,13 +317,14 @@ function NewDays (yyyy) {
     const date = $year('td', tr).eq(0).text().trim() // Text content of the row's date cell
     if (notFirst && date !== '') {
       // For the start of a new day that's not the first day of the year, first ...
-      processDay() // Process the previous day
+      await processDay() // Process the previous day
       // Initialize a new day
       YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2')
       $tmptbl = cheerio.load('<table></table>')
       $tmptbl.prototype.tableText = tableText
       $tmptbl.prototype.formatHTML = formatHTML
       $tmptbl.prototype.addClassName = addClassName
+      $tmptbl.prototype.extractDate = extractDate
     } else if (!notFirst && date !== '') {
       // For the first date of the year, initialize a new day
       YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2') // The new day's date as YYYY-MM-DD
@@ -222,6 +332,7 @@ function NewDays (yyyy) {
       $tmptbl.prototype.tableText = tableText // Add plugins to the new Cheerio query function
       $tmptbl.prototype.formatHTML = formatHTML
       $tmptbl.prototype.addClassName = addClassName
+      $tmptbl.prototype.extractDate = extractDate
       $tmptbl(tr).addClassName($tmptbl) // Add class names to first row's <td> elements
       notFirst = true
     } else if ($year('td', tr).tableText($year) === '') {
@@ -238,41 +349,13 @@ function NewDays (yyyy) {
   }
 
   // Exit from NewDays
-  if (!callInsert) {
+  if (!databasesUpdated) {
     // No inserts or updates
-    global.win.webContents.send('display-msg', 'None', { indent: true })
+    global.win.webContents.send('display-msg', 'No database updates')
   }
-  return callInsert
+  localDB.end() // Close the connection to the local database
+  remoteDB.end() // Close the connection to the remote database
+  // return callInsert
 }
 
-// Insert invokes the MAMP insert.php script to update the local MySQL database.
-//
-// Insert creates a listener for the closing of the window used to run
-//  insert.php.
-//
-// Insert sends a message to the index.js process to cause it to run insert.php.
-//
-function Insert () {
-  // Create a new window to run the insert.php script, which performs MySQL inserts and updates
-  // Create winInsert BrowserWindow
-  const winInsert = new BrowserWindow({
-    width: 500,
-    height: 300,
-    x: global.x + 200, // position relative to win BrowserWindow
-    y: global.y + 300
-  })
-  // Run recipeScraperInsert.php to update local MySQL database
-  winInsert.loadURL('http://localhost:8888/recipeScraperInsert.php')
-
-  // Listen for winInsert window close
-  winInsert.on('closed', () => {
-    console.log('Insert window closed')
-    // Let index-renderer.js process know
-    // Window for insert.php was closed
-    global.win.webContents.send('remove-msgs')
-    const msg = 'Finished'
-    global.win.webContents.send('display-msg', msg)
-  })
-}
-
-module.exports = { tableText, formatHTML, NewDays, Insert }
+module.exports = { tableText, formatHTML, NewDays }

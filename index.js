@@ -42,6 +42,7 @@
 const { app, BrowserWindow } = require('electron')
 const { ipcMain } = require('electron')
 const path = require('path')
+require('dotenv').config() // Load environment variables
 
 app.disableHardwareAcceleration() // work-around for electron bug #43415
 

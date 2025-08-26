@@ -1,17 +1,16 @@
-// This module executes the 'current' mode of the recipe-scraper application.  Index.js issues
-//  require for this module.
+// This module executes the 'current' mode of the recipe-scraper application.  Index.js  issues require for this module.
 
 // recipe-scraper (current) remembers the last date processed and displays subsequent dates that have not yet been processed as links. It also offers a date picker to reprocess prior dates.
 
-// When a not yet processed date link is clicked, the application launches a Chrome instance to display the day's Today's Paper page. When subsequent date links are clicked,  the Today's Paper page is opened in a new tab in the previously launched Chrome instance.
+// When a not yet processed date link is clicked, the application launches a Chrome instance to display that date's Today's Paper page. When subsequent date links are clicked,  the Today's Paper page is opened in a new tab in the previously launched Chrome instance.
 
-// The application works with Tampermonkey userscripts (tpScrape, Scrape and reportCookingHref) installed in the launched Chrome instance.  Userscript tpScrape is invoked from a Tampermonkey menu command and scrapes the food section (Food or Magazine) of the Today's Paper page for article titles, authors and URLs. The userscript opens the articles in tabs and userscript Scrape scrapes those articles for recipes. Scrape also looks for recipes in related links blocks. For such recipes, the userscript opens the recipes in tabs. For these recipes, the userscript reportCookingHref obtains the URL of the article in which the recipe was featured.
+// The application works with Tampermonkey userscripts (tpScrape, Scrape and reportCookingHref) installed in the launched Chrome instance.  Userscript tpScrape is invoked from a Tampermonkey menu command and scrapes the food section (Food or Magazine) of the Today's Paper page for article titles, authors and URLs. The userscript opens the scraped articles in tabs and userscript Scrape scrapes those articles for recipes. Scrape also looks for recipes in related links blocks. For such recipes, the userscript opens the recipes in tabs. For these recipes, the userscript reportCookingHref obtains the URL of the article in which the recipe was featured.
 
 // These userscripts send their results to the recipe-scraper application via HTTP.
 
 // The recipe-scraper application uses Cheerio to format the information sent by the userscripts as table rows. It displays the table rows for review and editing. It then adds the rows to the year's index.html file and stores the rows in HTML format as a file in the year's Days folder. It also adds the day's entries to the local NYTArticles database and creates SQL statements to add the entries to the remote NYTArticles database.
 
-// related-links version 3.3.0
+// version 3.4.0
 
 // Code structure:
 //
@@ -146,7 +145,7 @@
 // }
 //
 
-const { tableText, formatHTML, NewDays, Insert } = require('./lib.js') // Shared scraper functions
+const { tableText, formatHTML, NewDays } = require('./lib.js') // Shared scraper functions
 const { app, ipcMain, BrowserWindow } = require('electron') // InterProcess Communications
 const path = require('path')
 const Moment = require('moment') // Date/time functions
@@ -518,8 +517,8 @@ async function processNewDays (yyyy) {
 
   console.log('processNewDays: entered')
   return new Promise(function (resolve) {
-    ipcMain.once('continue', () => {
-      NewDays(yyyy)
+    ipcMain.once('continue', async () => {
+      await NewDays(yyyy)
       resolve() // Resolve Promise
     })
     global.win.webContents.send('enable-continue')
@@ -1056,9 +1055,6 @@ async function Mainline () {
           console.log('Mainline: awaiting processNewDays')
           await processNewDays(tpYear)
           console.log('Mainline: returned from processNewDays')
-
-          // Call Insert to insert/update new and changed days in local database
-          Insert()
         } else {
           console.error('Mainline: problem updating index.html')
           console.error('newTableHTML:')

@@ -1,3 +1,48 @@
+8/25/2025
+    Update databases directly
+    Upgrade packages
+        - Cheerio 1.1.2
+        - Electron 37.3.0
+        - moment 2.30.1
+        - puppeteer 24.16.2
+        - utf-8-validate 6.0.5
+    Add packages
+        - dotenv 17.2.1
+        - mysql2 3.14.3
+    Remove packages
+        - request
+        - needle
+        - cheerio-get-css-selector
+    Add file .env containing database credentials
+    Change lib.js
+    - Require mysql2/promise
+    - Remove import of BrowserWindow from electron
+    - Remove function Insert and drop Insert from lib.js's exports
+    - function NewDays
+        -- Make functions NewDays and processDay async
+        -- Connect to the local and remote databases
+        -- Add Cheerio extension function extractDate that returns an array of date component values for use in SQL statements
+        -- Add 'await' to the calls to function processDay
+        -- Execute an INSERT or UPDATE SQL statement on the local and remote databases
+        -- Eliminate writing SQL statements to the inserts, updates and exports folders
+        -- Eliminate the callInsert boolean
+        -- End the database connections before returning
+    Change current.js
+        - Drop function Insert from the lib.js imports
+        - function processNewDays
+            -- Make .once('continue') function async
+            -- Add 'await' to the call to function NewDays
+        - Remove the call to function Insert
+    Change past.js
+        - Drop function Insert from the lib.js imports
+        - Make .on('process-year') function async
+        - Add 'await' to the call to function NewDays
+        - Remove the call to function Insert
+    Change index.js
+        - Add "require('dotenv').config()" to acquire environment variables from the .env file
+    Change .gitignore
+        - Add file .env
+
 ?/24/2025
     related-links branch
     Change current.js

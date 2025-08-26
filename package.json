@@ -11,14 +11,13 @@
   "dependencies": {
     "bufferutil": "^4.0.9",
     "cheerio": "^1.1.0",
-    "cheerio-get-css-selector": "^2.0.0",
-    "electron": "^36.4.0",
+    "dotenv": "^17.2.1",
+    "electron": "^37.2.5",
     "http": "^0.0.1-security",
     "moment": "^2.29.4",
-    "needle": "^3.3.1",
+    "mysql2": "^3.14.3",
     "newdays": "file:../newdays",
     "puppeteer": "^24.10.1",
-    "request": "^2.88.2",
     "spectre.css": "^0.5.9",
     "utf-8-validate": "^6.0.3"
   },
