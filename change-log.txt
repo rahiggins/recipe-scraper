@@ -1,3 +1,26 @@
+9/?/2025
+    Resolve issues 18 1nd 19.
+    Change lib.js
+    - Require execFileSync from child_process
+    - function NewDays
+        -- function tableText
+            --- Rename function tableText to tableContent
+            --- Instead of invoking text() on <td> elements, invoke prop('innerHTML')
+            --- In addition to removing newlines and trimming the content of <td> elements,
+                - reduce multiple spaces to a single space
+                - remove <meta charset> tags inserted by BlueGriffon
+                - remove a space that precedes or follows a tag
+                - escape single quotes for the shell
+            --- Ignore <td> content that consists of only a <br> tag
+        -- Remove function addClassName
+        -- Change tableText references to tableContent
+        -- function processDay
+            --- Invoke the diff command to compare the existing table HTML to the new table HTML
+        -- Refactor the <tr> element loop so that the code creating the Cheerio query function $tmptbl occurs only once by separating the "if (notFirst && date !== '')" into two if statements.
+    Change current.js
+        -- Change tableText references to tableContent
+
+
 8/25/2025
     Update databases directly
     Upgrade packages

@@ -1,22 +1,18 @@
 // Functions shared by current-renderer.js and past-renderer.js
 //
-//  tableText   - Cheerio query function plugin, return the aggregated text content of <td> elements
+//  tableContent   - Cheerio query function plugin, return the aggregated content of <td> elements
 //  formatHTML  - Cheerion query function plugin, format table row HTML
 //  NewDays     - determine which days in index.html are new or updated
-//  Insert      - Invoke insert.php to update the local database
 //
 
 const fs = require('fs') // Filesystem functions
 const path = require('path') // Path functions
 const cheerio = require('cheerio') // core jQuery
 const mysql = require('mysql2/promise') // MySQL database functions
+const { execFileSync } = require('child_process') // Execute shell commands
 
 // NewDays is used after adding a day entry to a year's index.html file
 //  or changing an existing entry in an index.html file.
-//
-// It creates input for the MAMP insert.php script, which inserts/updates days'
-//  table HTML in the local MySQL database and creates an insert/update file
-//  to import into the remote database.
 //
 // NewDays has one input parameter: the year being processed (yyyy)
 //
@@ -32,26 +28,34 @@ const mysql = require('mysql2/promise') // MySQL database functions
 //
 //  If the table HTML for the day does not exist in the Days folder,
 //   NewDays stores the table HTML in the Days folder as yyyy-mm-dd.txt and
-//   in the MAMP htdocs/inserts folder under the same name for use by the
-//   insert.php script.
+//   inserts the table HTML into the the local and remote databases.
 //
 //  If the two sets of table HTML differ, NewDays renames the existing
 //   file in the Days folder as Old_yyyy-mm-dd.txt (replacing an existing
 //   Old_yyyy-mm-dd.txt) and stores the new HTML in the Days folder as
-//   yyyy-mm-dd.txt and in the MAMP htdocs/updates folder as yyyy-mm-dd.txt
-//   for use by the insert.php script.
+//   yyyy-mm-dd.txt and updates the table HTML in the the local and remote databases.
 //
 
 // Cheerio plug-in functions
 
-// Return the aggregated text content of <td> elements
-function tableText ($) {
+// Return the aggregated content of <td> elements
+function tableContent ($) {
   // Input - Cheerio query function
   // this - Cheerio object containing <td> elements
-  // Output - concatentated text of the <td> elements with whitespace and newlines removed
+  // Output - concatentated content of the <td> elements with some edits
+  //
+  // Invocation example: $('td').tableContent($)
   let text = ''
   this.each((i, element) => {
-    text += $(element).text().replaceAll('\n', '').trim()
+    const iH = $(element).prop('innerHTML')
+      .replaceAll('\n', '') // Remove newlines
+      .replace(/  +/g, ' ') // Reduce multiple spaces to a single space
+      .replaceAll('<meta charset="utf-8">', '') // Remove this, inserted by BlueGriffon
+      .replaceAll("'", "''") // Escape single quotes for the shell
+      .replaceAll(' <', '<') // Remove a space before a tag
+      .replaceAll('> ', '>') // Remove a space after a tag
+      .trim()
+    text += iH !== '<br>' ? iH : '' // Ignore content that is only a <br> tag
   })
   return text
 }
@@ -61,6 +65,8 @@ function formatHTML ($) {
   // Input - Cheerio query function
   // this - Cheerio object containing the table elements
   // Output - formatted HTML
+  //
+  // Invocation example: $('table').formatHTML($)
   if (this.length > 0) {
     // Return the Cheerio object's HTML with the following changes:
     // 1. Insert a newline after the tbody tag
@@ -150,17 +156,6 @@ async function NewDays (yyyy) {
   const insert = 'INSERT INTO days (year, month_num, month, day, markup) VALUES (?, ?, ?, ?, ?)'
   const update = 'UPDATE days SET markup=?  WHERE year=? AND month_num=? AND day=?'
 
-  // Cheerio extension function - add class names to a row's <td> elements
-  // Used to add class names to the first row of a day's table HTML
-  function addClassName ($) {
-    const classNames = ['date', 'type', 'name']
-    $('td', this).each((i, element) => {
-      if (!$(element).hasClass(classNames[i])) {
-        $(element).addClass(classNames[i])
-      }
-    })
-  }
-
   // Cheerio extension function - Extract the date from the first table cell of a day's table rows
   function extractDate (mode = 'i') {
     // this - $('tr td').eq(0)
@@ -225,18 +220,25 @@ async function NewDays (yyyy) {
       // Load the Days folder table HTML into a Cheerio query function and add a plugin to the function
       const dayHTML = fs.readFileSync(dayFile, 'utf8')
       const $day = cheerio.load(`<table>${dayHTML}</table>`)
-      $day.prototype.tableText = tableText
+      $day.prototype.tableContent = tableContent
 
-      if ($tmptbl('td').tableText($tmptbl) === $day('td').tableText($day)) {
-        console.log(`Both ${fileName} are the same`)
-      } else {
-        console.log(`${fileName} differs, added to updates`)
+      // Get the concatenated inner HTML of both tables and insert newlines after each tag to facilitate comparison
+      const newInnerHTML = $tmptbl('td').tableContent($tmptbl).replaceAll('>', '>\n')
+      const existingInnerHTML = $day('td').tableContent($day).replaceAll('>', '>\n')
 
-        console.log('New HTML:')
-        console.log($tmptbl('td').tableText($tmptbl))
-        console.log('---------')
-        console.log('Existing HTML:')
-        console.log($day('td').tableText($day))
+      // Use the diff command to compare the two tables. The ouput of the command is logged to the console. If the tables differ, an exception is thrown.
+      try {
+        execFileSync(
+          'diff', [`<( printf '%s' '${newInnerHTML}' )`,
+            `<( printf '%s' '${existingInnerHTML}' )`],
+          {
+            stdio: 'inherit',
+            shell: '/bin/zsh'
+          }
+        )
+      } catch (e) {
+        // The tables differ. The existing HTML in the Days folder will be renamed by prepending 'Old_' and the new HTML will replace it.
+        console.log(`${fileName} is being renamed to Old_${fileName} and replaced`)
 
         // Existing file will be renamed to Old_file
         if (fs.existsSync(oldFile)) {
@@ -246,7 +248,7 @@ async function NewDays (yyyy) {
         // Rename existing file to Old_file
         fs.renameSync(dayFile, oldFile)
 
-        // Format the day's table HTML
+        // Format the day's new table HTML
         const dayHTML = $tmptbl('table').formatHTML($tmptbl)
 
         // Write updated file to Days
@@ -272,7 +274,6 @@ async function NewDays (yyyy) {
       }
     } else {
       // The day's HTML file is not in the Days folder, so create it
-      // global.win.webContents.send('display-msg', `${fileName} added to inserts`, { indent: true })
       const dayHTML = $tmptbl('table').formatHTML($tmptbl)
       fs.writeFileSync(dayFile, dayHTML, 'utf8')
 
@@ -304,7 +305,7 @@ async function NewDays (yyyy) {
   const table = fs.readFileSync(tablePath, 'UTF-8').toString()
   const $year = cheerio.load(table)
   $year.prototype.formatHTML = formatHTML
-  $year.prototype.tableText = tableText
+  $year.prototype.tableContent = tableContent
 
   // Compare each day in the year's table HTML to the corresponding day's table HTML in the Days folder
   let notFirst = false // First date is handled differently from the rest
@@ -315,27 +316,20 @@ async function NewDays (yyyy) {
   for (const tr of trs) {
     // For each table row ...
     const date = $year('td', tr).eq(0).text().trim() // Text content of the row's date cell
-    if (notFirst && date !== '') {
-      // For the start of a new day that's not the first day of the year, first ...
-      await processDay() // Process the previous day
+    if (date !== '') {
+      // For the start of a new day ...
+      if (notFirst) {
+        // If it's not the first day of the year ...
+        await processDay() // Process the previous day
+      }
       // Initialize a new day
-      YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2')
-      $tmptbl = cheerio.load('<table></table>')
-      $tmptbl.prototype.tableText = tableText
+      YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2') // The new day's date as  YYYY-MM-DD
+      $tmptbl = cheerio.load('<table></table>') // Create a new Ceerio query function for the   new day
+      $tmptbl.prototype.tableContent = tableContent // Add plugins to the new Cheerio query function
       $tmptbl.prototype.formatHTML = formatHTML
-      $tmptbl.prototype.addClassName = addClassName
       $tmptbl.prototype.extractDate = extractDate
-    } else if (!notFirst && date !== '') {
-      // For the first date of the year, initialize a new day
-      YMD = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2') // The new day's date as YYYY-MM-DD
-      $tmptbl = cheerio.load('<table></table>') // Create a new Ceerio query function for the new day
-      $tmptbl.prototype.tableText = tableText // Add plugins to the new Cheerio query function
-      $tmptbl.prototype.formatHTML = formatHTML
-      $tmptbl.prototype.addClassName = addClassName
-      $tmptbl.prototype.extractDate = extractDate
-      $tmptbl(tr).addClassName($tmptbl) // Add class names to first row's <td> elements
       notFirst = true
-    } else if ($year('td', tr).tableText($year) === '') {
+    } else if ($year('td', tr).tableContent($year) === '') {
       // If the row is empty, there are no more days with content to process in the year, so exit this loop
       YMD = '' // Indicate that the loop was terminated before the end of the year
       break
@@ -358,4 +352,4 @@ async function NewDays (yyyy) {
   // return callInsert
 }
 
-module.exports = { tableText, formatHTML, NewDays }
+module.exports = { tableContent, formatHTML, NewDays }

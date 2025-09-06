@@ -145,7 +145,7 @@
 // }
 //
 
-const { tableText, formatHTML, NewDays } = require('./lib.js') // Shared scraper functions
+const { tableContent, formatHTML, NewDays } = require('./lib.js') // Shared scraper functions
 const { app, ipcMain, BrowserWindow } = require('electron') // InterProcess Communications
 const path = require('path')
 const Moment = require('moment') // Date/time functions
@@ -473,7 +473,7 @@ function updateIndexHTML (date, year, arg) {
 
   // Load the year's table into Cheerio
   const $year = cheerio.load(table)
-  $year.prototype.tableText = tableText
+  $year.prototype.tableContent = tableContent
 
   // Find the row corresponding to the input date - the target row
   const trs = $year('tr')
@@ -608,14 +608,14 @@ async function dayCompare (new$, old$) {
 
   // Create an array (oldRowsText) of each old table row's text
   const oldRowsText = []
-  oldRows.each((i, tr) => oldRowsText.push(old$('td', tr).tableText(old$)))
+  oldRows.each((i, tr) => oldRowsText.push(old$('td', tr).tableContent(old$)))
 
   // For the new collection, create an iterable Cheerio object of the table rows
   const newRows = new$('tr')
 
   // Create an array (newRowsText) of each new table row's text
   const newRowsText = []
-  newRows.each((i, tr) => newRowsText.push(new$('td', tr).tableText(new$)))
+  newRows.each((i, tr) => newRowsText.push(new$('td', tr).tableContent(new$)))
 
   // Make a copy of the new collection.  Rows from the old collection that are missing from the new one will be merged into this copy.
   const merge$ = cheerio.load('<table></table')
@@ -963,7 +963,7 @@ async function Mainline () {
 
       // Create a Cheerio query functon based on a table and append the table rows returned from the review window to it
       let $newDay = cheerio.load('<table></table>')
-      $newDay.prototype.tableText = tableText
+      $newDay.prototype.tableContent = tableContent
       $newDay.prototype.formatHTML = formatHTML
       let $existingDay
       for (const row of tableRowsArray) {
@@ -995,7 +995,7 @@ async function Mainline () {
         if (checkExistingResult.exists) {
           // Create a Cheerio query function based on the existing table rows
           $existingDay = cheerio.load('<table>' + checkExistingResult.existingHTML + '</table>')
-          $existingDay.prototype.tableText = tableText
+          $existingDay.prototype.tableContent = tableContent
           $existingDay.prototype.formatHTML = formatHTML
 
           // Compare the new table rows to the existing rows
