@@ -339,7 +339,7 @@ async function requestListener (req, res) {
                 }
                 // Decrement the number of this article's candidates remaining to be processed
                 const artIdx = 'article' + artObj.index.toString()
-                counters[artIdx + 'Candidates'] -= 1
+                counters[artIdx + 'Candidates'] -= 1 // If this reaches zero and artObj.hasRecipes is true, the article's checkbox should be updated to checked
               }
             }
           }
@@ -484,7 +484,7 @@ function updateIndexHTML (date, year, arg) {
     // If the target row was found, replace (or remove) it
     targetRow.attr('data-replace', 'true') // Mark the target row for replacement or removal
     let nextRow = targetRow.next()
-    while (nextRow && $year('td', nextRow).eq(0).text().trim() === '') {
+    while (nextRow.length && $year('td', nextRow).eq(0).text().trim() === '') {
       // Remove rows following the target row until the next date row
       nextRow.remove()
       nextRow = targetRow.next()

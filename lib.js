@@ -155,6 +155,8 @@ async function NewDays (yyyy) {
   // MySQL statement templates
   const insert = 'INSERT INTO days (year, month_num, month, day, markup) VALUES (?, ?, ?, ?, ?)'
   const update = 'UPDATE days SET markup=?  WHERE year=? AND month_num=? AND day=?'
+  const insertRecipe = 'INSERT INTO recipes (number, date, url) VALUES (?, ?, ?)'
+  const selectRecipe = 'SELECT EXISTS(SELECT * FROM recipes WHERE number = ?) AS `exists`'
 
   // Cheerio extension function - Extract the date from the first table cell of a day's table rows
   function extractDate (mode = 'i') {
@@ -295,6 +297,23 @@ async function NewDays (yyyy) {
         console.log(err)
       }
     }
+    // Insert any new recipes into the local Rdays recipes table
+    const date = $tmptbl('td').eq(0).text().trim() // MM/DD/YYYY
+    const recipes = $tmptbl('a').filter((i, el) => {
+      return $tmptbl(el).attr('href')?.includes('cooking.nytimes.com/recipes/')
+    })
+    for (const recipe of recipes) {
+      const url = $tmptbl(recipe).attr('href')
+      const recipeId = url.match(/^.*\/(\d+)-?(.*$)?$/)[1]
+      if (recipeId) {
+        const number = parseInt(recipeId, 10)
+        const [[results]] = await localDB.execute(selectRecipe, [number]) // results is { exists: 0|1 }
+        if (!results.exists) {
+          await localDB.execute(insertRecipe, [number, date, url])
+          console.log(`Added recipe: ${date} ${url}`)
+        }
+      }
+    }
   }
 
   const yearPath = path.join('/Users/rahiggins/Sites/NYT Recipes', yyyy) // The year's folder
@@ -339,7 +358,7 @@ async function NewDays (yyyy) {
   }
   if (YMD !== '') {
     // If the loop reached the end of the year ...
-    processDay() // Process the last day
+    await processDay() // Process the last day
   }
 
   // Exit from NewDays

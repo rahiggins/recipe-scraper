@@ -1,4 +1,17 @@
-9/?/2025
+1/1/2026
+    Small fixes
+    Change artScrape.js
+    - function getRecipes
+        -- Add 'Also try:' to the list of paragraph prefixes that indicate recipe links follow.
+        -- Examine related links block URLs for "https://cooking.nytimes.com/recipes/", instead of "https://cooking.nytimes.com"
+    Change current.js
+    - function updateIndexHTML
+        -- Test nextRow.length instead of nextRow to detect the end of the table.
+    Change lib.js
+    - function NewDays
+        -- Query the MySQL Rdays.recipes table for all recipes in days being inserted or updated and insert recipes not found into the table.
+
+9/5/2025
     Resolve issues 18 1nd 19.
     Change lib.js
     - Require execFileSync from child_process

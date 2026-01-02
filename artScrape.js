@@ -266,7 +266,7 @@ async function artScrape (returnObj, debug) {
       Log('No articleBody found')
       return [false, []]
     }
-    // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021) "^Eat:" (1/24/2024)
+    // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021) "^Eat:" (1/24/2024) "^Also try:" (11/11/2025)
     // Added class pantry--body-long "The Surprising Trick for Cooking Rice That Works for Any Grain" 2/5/2025
     const paras = articleBody.querySelectorAll('p.evys1bk0, p.pantry--body-long')
     for (const para of paras) {
@@ -276,7 +276,7 @@ async function artScrape (returnObj, debug) {
       let first = true
       const pText = para.textContent
       // console.log("p.evys1bk0 loop - <p> text: " + pText)
-      if (pText.match(/^Recipe[s]?:|^Pairing[s]?:|^Eat:|^Related:/) != null) {
+      if (pText.match(/^Recipe[s]?:|^Pairing[s]?:|^Eat:|^Related:|^Also try:/) != null) {
         Log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
         const links = para.querySelectorAll('a')
         for (const link of links) {
@@ -425,7 +425,7 @@ async function artScrape (returnObj, debug) {
     const candidates = document.querySelectorAll('.related-links-block a')
     console.log('Number of related recipes: ' + candidates.length.toString())
     for (const candidate of candidates) {
-      if (candidate.href.startsWith('https://cooking.nytimes.com')) {
+      if (candidate.href.startsWith('https://cooking.nytimes.com/recipes/')) {
         let push = true
         for (const href of hrefArray) {
           console.log('Comparing candidates to recipes')
