@@ -244,13 +244,13 @@ async function requestListener (req, res) {
 
   // Function to process an article info object received from the Scrape userscript
   async function artInfo (postObj) {
-    Log('Function artInfo entered for ' + postObj.url)
+    console.log(`Function artInfo entered for ${postObj.titleInfo.title} with ${postObj.recipeList.length.toString()} recipe(s) and ${postObj?.candidates.length ? postObj.candidates.length.toString() : 0} candidate(s)`)
 
     // Find the corresponding element of the Today's Paper object array
     // let notMatched = true // Attempt to handle additional articles not on the Today's Paper page
     for (const artObj of tpObjArray) {
       if (artObj.tpHref === postObj.url) {
-        // When found, merge the Today's Paper onject keys in the the article info object received from Scrape
+        // When found, merge the Today's Paper object keys in the the article info object received from Scrape
         Object.assign(postObj, artObj)
         // If a title could not be found (57 Sandwiches That Define New York City - 6/19/2024), use the article title from the Today's Paper page
         postObj.titleInfo.title = postObj.titleInfo.title || artObj.tpTitle
@@ -340,6 +340,13 @@ async function requestListener (req, res) {
                 // Decrement the number of this article's candidates remaining to be processed
                 const artIdx = 'article' + artObj.index.toString()
                 counters[artIdx + 'Candidates'] -= 1 // If this reaches zero and artObj.hasRecipes is true, the article's checkbox should be updated to checked
+                if (counters[artIdx + 'Candidates'] === 0) {
+                  console.log('All candidates for article index ' + artObj.index + ' processed')
+                  if (artObj.hasRecipes) {
+                    // Check the article's checkbox, specified by the checkbox element's id
+                    global.win.webContents.send('check-box', `cbi${artObj.index.toString()}`)
+                  }
+                }
               }
             }
           }

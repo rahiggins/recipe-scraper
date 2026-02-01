@@ -1,3 +1,19 @@
+1/31/2026
+    Fix issue # 21, #22, #23
+    - Change current.js
+        -- function requestListener, req.on('end')
+            --- When an recipeRelatedArticle object is received, if an article's candidate count goes to zero and the article has recipes, send a check-box message with article's checkbox element id to the renderer process.
+            --- Log the number of recipes and candidates when an artInfo object is received
+    - Change current-preload.js
+        -- Add onCheckBox for the check-box message
+    - Change current-renderer.js
+        -- Add onCheckBox to set the specified checkbox element's checked attribute to true
+    - Change artScrape.js
+        -- function getRecipes
+            --- In addition to the arrays of recipe names and recipe URLs, maintain an array of recipe IDs, the unique number that is part of recipe URLs. When checking for duplicate recipes, compare recipe IDs instead of the full URLs, which can have spelling variants in the recipe name part of the URL.
+            --- Add function checkHref. Ignore any recipe links that don't include 'cooking.nytimes.com/recipes/'
+            --- Log found recipe counts to document the flow through artScrape.js
+
 1/1/2026
     Small fixes
     Change artScrape.js
@@ -79,7 +95,7 @@
     Change .gitignore
         - Add file .env
 
-?/24/2025
+7/24/2025
     related-links branch
     Change current.js
     - function Mainline

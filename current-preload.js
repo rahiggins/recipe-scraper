@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld(
     onRemoveDates: (fn) => {
       ipcRenderer.on('remove-dates', (event, ...args) => fn(...args))
     },
+    onCheckBox: (fn) => {
+      ipcRenderer.on('check-box', (event, ...args) => fn(...args))
+    },
     added: () => ipcRenderer.send('added'),
     articleClick: (action, href) => ipcRenderer.send('article-click', action, href),
     review: (indices) => ipcRenderer.send('review', indices),

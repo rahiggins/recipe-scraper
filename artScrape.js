@@ -250,16 +250,29 @@ async function artScrape (returnObj, debug) {
     // Returns a boolean indicating whether or not any recipes were found
     Log('getRecipes entered')
 
+    function checkHref (href) {
+      Log('Function checkHref entered')
+      Log('href: ' + href)
+      // If the href does not include cooking.nytimes.com/recipes/, return false
+      // 1/28/2026 To Improve How He Ate, Our Critic Looked at What He Drank
+      if (!href.includes('cooking.nytimes.com/recipes/')) {
+        return false
+      }
+      return true
+    }
+
     // Look for recipe links, which occur in several formats, in the <section> named articleBody
     //  Extract text and href from <a> elements and push onto
     //  textArray and hrefArray.
 
     const recipeList = [] // Array of recipe objects { name:, link: }
-    const hrefList = [] // Array of hrefs already added to recipeList
 
-    const textArray = []
-    const hrefArray = []
-    const inconsistentArray = []
+    const textArray = [] // Array of recipe names
+    const hrefArray = [] // Array of recipe URLs
+    const inconsistentArray = [] // Array of booleans indicating inconsistancies between recipe anme and associated URL
+    const recipeIdArray = [] // Array of recipe IDs extracted from recipe URLs
+    const recipeIdList = [] // Array of recipe IDs already added to recipeList
+
     // Limit the recipe search to the body of the article, which is contained in a <section> element named articleBody or an <article> element (1/8/2025 - An Easy One-Pot Method for Vegetarian Meals)
     const articleBody = document.querySelector('section[name="articleBody"], article')
     if (!articleBody) {
@@ -269,6 +282,7 @@ async function artScrape (returnObj, debug) {
     // Most common format: <p> elements including text "Recipes:", "Recipe:", "Pairing:", "Pairings:", "Eat:" (5/23/2021) "^Eat:" (1/24/2024) "^Also try:" (11/11/2025)
     // Added class pantry--body-long "The Surprising Trick for Cooking Rice That Works for Any Grain" 2/5/2025
     const paras = articleBody.querySelectorAll('p.evys1bk0, p.pantry--body-long')
+    Log('paras: ' + paras.length.toString())
     for (const para of paras) {
       let name
       let href
@@ -277,11 +291,11 @@ async function artScrape (returnObj, debug) {
       const pText = para.textContent
       // console.log("p.evys1bk0 loop - <p> text: " + pText)
       if (pText.match(/^Recipe[s]?:|^Pairing[s]?:|^Eat:|^Related:|^Also try:/) != null) {
-        Log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:"')
+        Log('Recipes found - ' + '<p> elements including text "Recipes:", "Recipe:", "Pairing:", "Eat:", "Related:", "Also try:"')
         const links = para.querySelectorAll('a')
         for (const link of links) {
           name = link.textContent.trim()
-          if (name !== '') { // 4/23/2014 - duplicate <a> elements, 2nd with no text
+          if (name !== '' && checkHref(link.href)) { // 4/23/2014 - duplicate <a> elements, 2nd with no text
             href = link.href
             inconsistent = false
             if (nameDiffersFromURL(name, href)) {
@@ -292,6 +306,7 @@ async function artScrape (returnObj, debug) {
             Log(` ${inconsistent}`)
             textArray.push(name)
             hrefArray.push(href)
+            recipeIdArray.push(href.match(/^.*\/(\d+)-?(.*$)?$/)[1])
             inconsistentArray.push(inconsistent)
           }
         }
@@ -303,10 +318,11 @@ async function artScrape (returnObj, debug) {
       //  the text "View the full recipe." - 20 Easy Salads for Hot Summer Days 7/20/2022
       //  Ignore these.
       const paraanch = para.querySelectorAll('a')
+      Log('paraanchs: ' + paraanch.length.toString())
       if (paraanch.length === 1 &&
                     paraanch.textContent === para.textContent &&
                     !paraanch.textContent.startsWith('View') &&
-                    paraanch.href.includes('cooking.nytimes.com/recipes')) {
+                    checkHref(paraanch.href)) {
         Log('Recipes found -  standalone <p> element')
         name = paraanch.textContent
         href = paraanch.href
@@ -319,24 +335,27 @@ async function artScrape (returnObj, debug) {
         Log(` ${inconsistent}`)
         textArray.push(name)
         hrefArray.push(href)
+        recipeIdArray.push(href.match(/^.*\/(\d+)-?(.*$)?$/)[1])
         inconsistentArray.push(inconsistent)
       }
 
       // <p> element containing <strong> elements that contain a link to a recipe - How Will I Know if My Braise Is Ready? 3/20/2024
       const strongs = para.querySelectorAll('strong')
+      Log('strongs: ' + strongs.length.toString())
       if (strongs.length > 0) {
         for (const strong of strongs) {
           const as = strong.querySelectorAll('a')
           for (const a of as) {
             href = a.href
             name = a.textContent
-            if (href.includes('cooking.nytimes.com/recipes/')) {
+            if (checkHref(href)) {
               inconsistent = false
               if (nameDiffersFromURL(name, href)) {
                 inconsistent = true
               }
               textArray.push(name)
               hrefArray.push(href)
+              recipeIdArray.push(href.match(/^.*\/(\d+)-?(.*$)?$/)[1])
               inconsistentArray.push(inconsistent)
               if (first) {
                 Log('Recipes found - <p> element comprising <strong> elements')
@@ -360,6 +379,7 @@ async function artScrape (returnObj, debug) {
     //  11/16/2022 include 'cooking.nytimes.com/recipes' to exclude 'cooking.nytimes.com/thanksgiving'
     const headings = Array.from(articleBody.querySelectorAll('h2, h3'))
       .filter((el) => el.querySelector('a'))
+    Log('headings: ' + headings.length.toString())
     for (const heading of headings) {
       let name
       let href
@@ -392,12 +412,15 @@ async function artScrape (returnObj, debug) {
               inconsistent = true
             }
           }
-          textArray.push(name)
-          hrefArray.push(href)
-          inconsistentArray.push(inconsistent)
-          Log(` ${name}`)
-          Log(` ${href}`)
-          Log(` ${inconsistent}`)
+          if (checkHref(href)) {
+            textArray.push(name)
+            hrefArray.push(href)
+            recipeIdArray.push(href.match(/^.*\/(\d+)-?(.*$)?$/)[1])
+            inconsistentArray.push(inconsistent)
+            Log(` ${name}`)
+            Log(` ${href}`)
+            Log(` ${inconsistent}`)
+          }
         }
       }
     }
@@ -425,13 +448,14 @@ async function artScrape (returnObj, debug) {
     const candidates = document.querySelectorAll('.related-links-block a')
     console.log('Number of related recipes: ' + candidates.length.toString())
     for (const candidate of candidates) {
-      if (candidate.href.startsWith('https://cooking.nytimes.com/recipes/')) {
+      if (checkHref(candidate.href)) {
+        console.log('candidate: ' + candidate.href)
         let push = true
-        for (const href of hrefArray) {
-          console.log('Comparing candidates to recipes')
-          console.log('recipe: ' + href)
-          console.log('candidate: ' + candidate.href)
-          if (href === candidate.href) {
+        console.log('Comparing candidates to recipes')
+        for (const ID of recipeIdArray) {
+          console.log('recipe ID: ' + ID)
+          if (ID === candidate.href.match(/^.*\/(\d+)-?(.*$)?$/)[1]) {
+            // If the recipe IDs match, don't add a duplicate to the candidates array
             console.log('comparison equal')
             push = false
             break
@@ -452,21 +476,25 @@ async function artScrape (returnObj, debug) {
     //  I Lost My Appetite Because of Covid. This Sichuan Flavor Brought It Back. - 1/24/2021
     //  How to Turn the Humble Lentil Into an Extravagant Luxury - 3/27/2022
     //  This Sheet-Pan Vegetarian Dinner Can’t Get Much Simpler - 9/27/2023
+    //  The Stew That Takes Me Back Home to Lagos - 12/3/2025
+    //  The Secret to the Easiest New Year’s Party Spread - 12/24/2025
     // For duplicate hrefs with duplicate names, ignore duplicates.
     //  For duplicate hrefs with disparate names, concatenate the names.
     // Create an array of recipe objects { name: link: } for each unique href.
 
     let lastHref = ''
+    let lastRecipeId = ''
     let nameAccum = ''
     let inconsistentAccum = false
     for (let i = 0; i < hrefArray.length; i++) {
       // For each <a> element look for duplicates in the remaining <a> elements
       nameAccum = textArray[i]
       lastHref = hrefArray[i]
+      lastRecipeId = recipeIdArray[i]
       inconsistentAccum = inconsistentArray[i]
       for (let j = i + 1; j < hrefArray.length; j++) {
         // For each of the remaining <a> elements ...
-        if (hrefArray[j] === lastHref) {
+        if (recipeIdArray[j] === lastRecipeId) {
           // If the hrefs are the same ...
           if (inconsistentAccum) {
             // If the current href's text is inconsistent, use the text of the matching href in the remaining elements
@@ -478,9 +506,9 @@ async function artScrape (returnObj, debug) {
           }
         }
       }
-      if (!hrefList.includes(lastHref)) {
-        // If the href has not already been added to the recipeList, add it
-        hrefList.push(lastHref)
+      if (!recipeIdList.includes(lastRecipeId)) {
+        // If the recipe ID has not already been added to the recipeList, add it
+        recipeIdList.push(lastRecipeId)
         recipeList.push({ name: nameAccum, link: lastHref, inconsistency: inconsistentAccum })
       }
     }

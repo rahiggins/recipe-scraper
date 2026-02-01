@@ -417,3 +417,10 @@ window.scraper.onRemoveDates(() => {
   datesList.remove()
   dateSpec.disabled = true
 })
+
+window.scraper.onCheckBox((id) => {
+  // Check the specified article's checkbox
+  // Input: id - the article's checkbox input element id
+  Log('check-box entered with ' + id)
+  document.getElementById(id).checked = true
+})
